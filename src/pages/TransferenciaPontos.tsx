@@ -884,10 +884,10 @@ export default function TransferenciaPontos() {
                   value={formData.origem_programa_id || ''}
                   onChange={(e) => setFormData({ ...formData, origem_programa_id: e.target.value })}
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  disabled={!formData.parceiro_id || programasOrigem.length === 0}
+                  disabled={!formData.parceiro_id || (formData.realizar_compra_carrinho ? programasDestino.length === 0 : programasOrigem.length === 0)}
                 >
                   <option value="">Selecione</option>
-                  {programasOrigem.map((pc) => (
+                  {(formData.realizar_compra_carrinho ? programasDestino : programasOrigem).map((pc) => (
                     <option key={pc.programa_id} value={pc.programa_id}>
                       {pc.programas_fidelidade?.nome || 'N/A'}
                     </option>
@@ -1186,7 +1186,7 @@ export default function TransferenciaPontos() {
               </div>
             )}
 
-            {origemSaldo !== null && origemSaldo <= 0 && formData.origem_programa_id && (
+            {origemSaldo !== null && origemSaldo <= 0 && formData.origem_programa_id && !formData.realizar_compra_carrinho && (
               <div className="bg-red-100 border border-red-300 rounded-lg p-3 mb-4 flex items-start gap-2">
                 <Info className="w-5 h-5 text-red-700 flex-shrink-0 mt-0.5" />
                 <p className="text-sm text-red-800">
