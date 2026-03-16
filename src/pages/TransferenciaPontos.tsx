@@ -100,6 +100,7 @@ export default function TransferenciaPontos() {
   const [parceiros, setParceiros] = useState<Parceiro[]>([]);
   const [programas, setProgramas] = useState<Programa[]>([]);
   const [programasOrigem, setProgramasOrigem] = useState<ProgramaClube[]>([]);
+  const [programasOrigemTodos, setProgramasOrigemTodos] = useState<ProgramaClube[]>([]);
   const [programasDestino, setProgramasDestino] = useState<ProgramaClube[]>([]);
   const [cartoes, setCartoes] = useState<Cartao[]>([]);
   const [contasBancarias, setContasBancarias] = useState<ContaBancaria[]>([]);
@@ -234,7 +235,7 @@ export default function TransferenciaPontos() {
 
   const buscarProgramasParceiro = async (parceiroId: string) => {
     try {
-      const [programasOrigemResult, programasDestinoResult] = await Promise.all([
+      const [programasOrigemResult, programasOrigemTodosResult, programasDestinoResult] = await Promise.all([
         supabase
           .from('estoque_pontos')
           .select(`
@@ -247,6 +248,17 @@ export default function TransferenciaPontos() {
           `)
           .eq('parceiro_id', parceiroId)
           .gt('saldo_atual', 0),
+        supabase
+          .from('estoque_pontos')
+          .select(`
+            programa_id,
+            saldo_atual,
+            programas_fidelidade:programa_id (
+              id,
+              nome
+            )
+          `)
+          .eq('parceiro_id', parceiroId),
         supabase
           .from('programas_clubes')
           .select(`
@@ -273,6 +285,19 @@ export default function TransferenciaPontos() {
         setProgramasOrigem(programasComSaldo);
       } else {
         setProgramasOrigem([]);
+      }
+
+      if (programasOrigemTodosResult.data) {
+        const todosProgramas = programasOrigemTodosResult.data.map((item: any) => ({
+          id: item.programa_id,
+          parceiro_id: parceiroId,
+          programa_id: item.programa_id,
+          quantidade_pontos: item.saldo_atual,
+          programas_fidelidade: item.programas_fidelidade
+        }));
+        setProgramasOrigemTodos(todosProgramas);
+      } else {
+        setProgramasOrigemTodos([]);
       }
 
       if (programasDestinoResult.data) {
@@ -884,21 +909,14 @@ export default function TransferenciaPontos() {
                   value={formData.origem_programa_id || ''}
                   onChange={(e) => setFormData({ ...formData, origem_programa_id: e.target.value })}
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  disabled={!formData.parceiro_id || (formData.realizar_compra_carrinho ? programas.length === 0 : programasOrigem.length === 0)}
+                  disabled={!formData.parceiro_id || (formData.realizar_compra_carrinho ? programasOrigemTodos.length === 0 : programasOrigem.length === 0)}
                 >
                   <option value="">Selecione</option>
-                  {formData.realizar_compra_carrinho
-                    ? programas.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.nome}
-                        </option>
-                      ))
-                    : programasOrigem.map((pc) => (
-                        <option key={pc.programa_id} value={pc.programa_id}>
-                          {pc.programas_fidelidade?.nome || 'N/A'}
-                        </option>
-                      ))
-                  }
+                  {(formData.realizar_compra_carrinho ? programasOrigemTodos : programasOrigem).map((pc) => (
+                    <option key={pc.programa_id} value={pc.programa_id}>
+                      {pc.programas_fidelidade?.nome || 'N/A'}
+                    </option>
+                  ))}
                 </select>
               </div>
 
