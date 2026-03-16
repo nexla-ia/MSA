@@ -6,7 +6,7 @@ import Modal from '../components/Modal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import ParceiroSearch from '../components/ParceiroSearch';
 import { useAuth } from '../contexts/AuthContext';
-import { formatCurrency, formatDate, formatNumberDisplay } from '../lib/formatters';
+import { formatCurrency, formatDate } from '../lib/formatters';
 
 interface Parceiro {
   id: string;
@@ -884,14 +884,21 @@ export default function TransferenciaPontos() {
                   value={formData.origem_programa_id || ''}
                   onChange={(e) => setFormData({ ...formData, origem_programa_id: e.target.value })}
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  disabled={!formData.parceiro_id || (formData.realizar_compra_carrinho ? programasDestino.length === 0 : programasOrigem.length === 0)}
+                  disabled={!formData.parceiro_id || (formData.realizar_compra_carrinho ? programas.length === 0 : programasOrigem.length === 0)}
                 >
                   <option value="">Selecione</option>
-                  {(formData.realizar_compra_carrinho ? programasDestino : programasOrigem).map((pc) => (
-                    <option key={pc.programa_id} value={pc.programa_id}>
-                      {pc.programas_fidelidade?.nome || 'N/A'}
-                    </option>
-                  ))}
+                  {formData.realizar_compra_carrinho
+                    ? programas.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.nome}
+                        </option>
+                      ))
+                    : programasOrigem.map((pc) => (
+                        <option key={pc.programa_id} value={pc.programa_id}>
+                          {pc.programas_fidelidade?.nome || 'N/A'}
+                        </option>
+                      ))
+                  }
                 </select>
               </div>
 
@@ -1032,9 +1039,6 @@ export default function TransferenciaPontos() {
                       placeholder="0,00"
                       className="w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
-                    <span className="text-xs text-slate-500 mt-1 block">
-                      {formData.compra_valor_total ? `R$ ${formatNumberDisplay(formData.compra_valor_total)}` : ''}
-                    </span>
                   </div>
                 </div>
 
