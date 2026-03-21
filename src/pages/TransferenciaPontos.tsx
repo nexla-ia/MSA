@@ -574,7 +574,11 @@ export default function TransferenciaPontos() {
       }
 
       delete dataToSave.compra_quantidade;
-      delete dataToSave.compra_valor_total;
+      // compra_valor_total é mantido: o trigger usa esse valor para calcular
+      // o custo médio do destino quando realizar_compra_carrinho = true
+      if (!dataToSave.realizar_compra_carrinho) {
+        delete dataToSave.compra_valor_total;
+      }
       delete dataToSave.compra_valor_milheiro;
       delete dataToSave.compra_custo_medio_final;
       delete dataToSave.compra_forma_pagamento;
