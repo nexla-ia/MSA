@@ -227,8 +227,8 @@ export default function Compras() {
         const programasUnicos = data
           .filter(item => item.programas_fidelidade)
           .map(item => ({
-            id: item.programas_fidelidade.id,
-            nome: item.programas_fidelidade.nome
+            id: (item.programas_fidelidade as any).id,
+            nome: (item.programas_fidelidade as any).nome
           }))
           .filter((programa, index, self) =>
             index === self.findIndex(p => p.id === programa.id)
@@ -246,23 +246,17 @@ export default function Compras() {
     try {
       setLoading(true);
 
-      const { data: parceirosAtivos, error: parceirosError } = await supabase.rpc('get_parceiros_ativos', { dias_limite: 90 });
-
-      const [comprasRes, tiposCompraRes, cartoesRes, bancosRes, classificacoesRes, formasPagRes] = await Promise.all([
+      const [comprasRes, tiposCompraRes, cartoesRes, bancosRes, classificacoesRes, formasPagRes, parceirosRes] = await Promise.all([
         supabase.from('compras').select('*, parceiros(nome_parceiro), programas_fidelidade(nome)').order('data_entrada', { ascending: false }),
         supabase.from('tipos_compra').select('id, nome, ativo').eq('ativo', true).order('nome'),
         supabase.from('cartoes_credito').select('id, cartao, banco_emissor, dia_vencimento, dia_fechamento').order('cartao'),
         supabase.from('contas_bancarias').select('id, nome_banco').order('nome_banco'),
         supabase.from('classificacao_contabil').select('id, classificacao, descricao').order('classificacao'),
-        supabase.from('formas_pagamento').select('id, nome, ativo').eq('ativo', true).order('ordem', { ascending: true })
+        supabase.from('formas_pagamento').select('id, nome, ativo').eq('ativo', true).order('ordem', { ascending: true }),
+        supabase.from('parceiros').select('id, nome_parceiro, cpf').order('nome_parceiro')
       ]);
 
-      if (parceirosError || !parceirosAtivos || parceirosAtivos.length === 0) {
-  const { data: todosParceiros } = await supabase.from('parceiros').select('id, nome_parceiro, cpf').order('nome_parceiro');
-  setParceiros(todosParceiros || []);
-} else {
-  setParceiros(parceirosAtivos || []);
-}
+      setParceiros(parceirosRes.data || []);
 
       if (comprasRes.data) setCompras(comprasRes.data);
       if (tiposCompraRes.data) setTiposCompra(tiposCompraRes.data);
