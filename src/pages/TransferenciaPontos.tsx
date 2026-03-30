@@ -538,7 +538,7 @@ export default function TransferenciaPontos() {
           valor_milheiro: formData.compra_valor_milheiro,
           forma_pagamento: formData.compra_forma_pagamento || 'Não informado',
           quantidade_parcelas: formData.compra_parcelas || 1,
-          observacao: `Compra para transferência${formData.compra_conta ? ' - ' + formData.compra_conta : ''}`,
+          observacao: 'Compra no Carrinho',
           status: 'Concluído',
           created_by: usuario?.id
         };
