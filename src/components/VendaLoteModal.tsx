@@ -212,12 +212,12 @@ export default function VendaLoteModal({ isOpen, onClose, onSuccess, parceiros, 
 
   useEffect(() => {
     if (formData.quantidade_milhas > 0 && formData.valor_milheiro > 0) {
-      const lucro = (formData.valor_milheiro - custoMedio) * formData.quantidade_milhas / 1000;
+      const lucro = (formData.valor_milheiro - valorMilheiroLotes) * formData.quantidade_milhas / 1000;
       setLucroReal(Number(lucro.toFixed(2)));
     } else {
       setLucroReal(0);
     }
-  }, [formData.valor_milheiro, formData.quantidade_milhas, custoMedio]);
+  }, [formData.valor_milheiro, formData.quantidade_milhas, valorMilheiroLotes]);
 
   const resetAll = () => {
     setStep(1);
