@@ -1150,7 +1150,7 @@ export default function CompraBonificada() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">
-                Data Compra <span className="text-red-500">*</span>
+                Data da Operação <span className="text-red-500">*</span>
               </label>
               <input
                 type="date"

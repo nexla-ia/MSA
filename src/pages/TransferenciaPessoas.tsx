@@ -968,7 +968,7 @@ export default function TransferenciaPessoas() {
 
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
-                  Data da Transferência <span className="text-red-500">*</span>
+                  Data da Operação <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="date"

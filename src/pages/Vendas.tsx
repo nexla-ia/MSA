@@ -798,7 +798,7 @@ export default function Vendas() {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Data Emissão <span className="text-red-500">*</span>
+                    Data da Operação <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="date"
