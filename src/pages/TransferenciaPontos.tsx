@@ -573,10 +573,12 @@ export default function TransferenciaPontos() {
         dataToSave.destino_data_recebimento_bonus = dataToSave.destino_data_recebimento;
       }
 
-      delete dataToSave.compra_quantidade;
-      // compra_valor_total é mantido: o trigger usa esse valor para calcular
-      // o custo médio do destino quando realizar_compra_carrinho = true
+      // compra_quantidade e compra_valor_total são mantidos quando carrinho=true:
+      // o trigger usa compra_quantidade para saber quanto debitar da origem
+      // (origem_quantidade - compra_quantidade) e compra_valor_total para
+      // calcular o custo do destino corretamente.
       if (!dataToSave.realizar_compra_carrinho) {
+        delete dataToSave.compra_quantidade;
         delete dataToSave.compra_valor_total;
       }
       delete dataToSave.compra_valor_milheiro;
