@@ -175,24 +175,18 @@ export default function CompraBonificada() {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const { data: parceirosAtivos, error: parceirosError } = await supabase.rpc('get_parceiros_ativos', { dias_limite: 90 });
-
-      const [comprasRes, programasRes, lojasRes, cartoesRes, contasBancariasRes, tiposCompraRes, formasPagRes] = await Promise.all([
+      const [comprasRes, programasRes, lojasRes, cartoesRes, contasBancariasRes, tiposCompraRes, formasPagRes, parceirosRes] = await Promise.all([
         supabase.from('compra_bonificada').select('*').order('data_compra', { ascending: false }),
         supabase.from('programas_fidelidade').select('id, nome').order('nome'),
         supabase.from('lojas').select('id, nome').order('nome'),
         supabase.from('cartoes_credito').select('id, cartao, dia_vencimento, dia_fechamento').order('cartao'),
         supabase.from('contas_bancarias').select('id, nome_banco, agencia, numero_conta').order('nome_banco'),
         supabase.from('tipos_compra').select('*').eq('ativo', true).order('nome'),
-        supabase.from('formas_pagamento').select('id, nome, ativo').eq('ativo', true).order('ordem', { ascending: true })
+        supabase.from('formas_pagamento').select('id, nome, ativo').eq('ativo', true).order('ordem', { ascending: true }),
+        supabase.from('parceiros').select('id, nome_parceiro, cpf').order('nome_parceiro')
       ]);
 
-      if (parceirosError || !parceirosAtivos || parceirosAtivos.length === 0) {
-  const { data: todosParceiros } = await supabase.from('parceiros').select('id, nome_parceiro, cpf').order('nome_parceiro');
-  setParceiros(todosParceiros || []);
-} else {
-  setParceiros(parceirosAtivos || []);
-}
+      setParceiros(parceirosRes.data || []);
 
       if (comprasRes.data) setCompras(comprasRes.data);
       if (programasRes.data) setProgramas(programasRes.data);
@@ -952,9 +946,6 @@ export default function CompraBonificada() {
                     onChange={(parceiroId) => setBatchParceiroId(parceiroId)}
                     placeholder="Digite para buscar parceiro..."
                   />
-                  <p className="text-xs text-slate-500 mt-1">
-                    Mostrando parceiros com movimentação nos últimos 90 dias
-                  </p>
                 </div>
 
                 <div>
