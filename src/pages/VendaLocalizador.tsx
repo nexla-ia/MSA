@@ -1,8 +1,16 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, User, Plane, CreditCard, DollarSign, FileText, Tag } from 'lucide-react';
+import { ArrowLeft, User, Plane, CreditCard, DollarSign, FileText, Tag, Layers } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { formatCurrency } from '../lib/formatters';
+
+interface VendaLote {
+  id: string;
+  pontos_usados: number;
+  valor_milheiro: number;
+  data_entrada: string;
+  compras: { data_entrada: string; valor_milheiro: number } | null;
+}
 
 interface Venda {
   id: string;
@@ -47,6 +55,7 @@ export default function VendaLocalizador() {
   const { vendaId } = useParams<{ vendaId: string }>();
   const navigate = useNavigate();
   const [venda, setVenda] = useState<Venda | null>(null);
+  const [vendaLotes, setVendaLotes] = useState<VendaLote[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -73,6 +82,13 @@ export default function VendaLocalizador() {
 
       if (error) throw error;
       setVenda(data);
+
+      const { data: lotes } = await supabase
+        .from('venda_lotes')
+        .select('id, pontos_usados, valor_milheiro, data_entrada')
+        .eq('venda_id', vendaId)
+        .order('data_entrada', { ascending: true });
+      setVendaLotes(lotes || []);
     } catch (error) {
       console.error('Erro ao carregar venda:', error);
     } finally {
@@ -227,6 +243,52 @@ export default function VendaLocalizador() {
             <Field label="Valor Total Venda" value={formatCurrency(valorTotalVenda)} />
           </div>
         </div>
+
+        {/* Lotes Usados */}
+        {vendaLotes.length > 0 && (
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+            <div className="flex items-center gap-2 px-5 py-3.5 border-b border-gray-100 bg-gray-50">
+              <Layers className="w-4 h-4 text-gray-500" />
+              <span className="text-sm font-semibold text-gray-700">Lotes Utilizados</span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-100">
+                    <th className="text-left px-5 py-2.5 text-xs font-medium text-gray-500">Data do Lote</th>
+                    <th className="text-right px-5 py-2.5 text-xs font-medium text-gray-500">Pontos Usados</th>
+                    <th className="text-right px-5 py-2.5 text-xs font-medium text-gray-500">Custo do Lote (mil)</th>
+                    <th className="text-right px-5 py-2.5 text-xs font-medium text-gray-500">Custo Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {vendaLotes.map((lote, idx) => (
+                    <tr key={lote.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                      <td className="px-5 py-2.5 text-gray-900">{formatDate(lote.data_entrada)}</td>
+                      <td className="px-5 py-2.5 text-right text-gray-900">{Number(lote.pontos_usados).toLocaleString('pt-BR')}</td>
+                      <td className="px-5 py-2.5 text-right text-gray-900">{formatCurrency(lote.valor_milheiro)}</td>
+                      <td className="px-5 py-2.5 text-right font-medium text-gray-900">
+                        {formatCurrency((lote.pontos_usados / 1000) * lote.valor_milheiro)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t border-gray-200 bg-gray-50">
+                    <td className="px-5 py-2.5 text-xs font-semibold text-gray-600">Total</td>
+                    <td className="px-5 py-2.5 text-right text-xs font-semibold text-gray-900">
+                      {vendaLotes.reduce((a, l) => a + Number(l.pontos_usados), 0).toLocaleString('pt-BR')}
+                    </td>
+                    <td></td>
+                    <td className="px-5 py-2.5 text-right text-xs font-semibold text-gray-900">
+                      {formatCurrency(vendaLotes.reduce((a, l) => a + (l.pontos_usados / 1000) * l.valor_milheiro, 0))}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        )}
 
         {/* Observação */}
         {venda.observacao && (

@@ -679,6 +679,7 @@ export default function VendaLoteModal({ isOpen, onClose, onSuccess, parceiros, 
         .sort((a, b) => new Date(a.data_entrada).getTime() - new Date(b.data_entrada).getTime());
       if (lotesCompras.length > 0) {
         let pontosRestantes = formData.quantidade_milhas;
+        const vendaLotesInserts = [];
         for (const lote of lotesCompras) {
           if (pontosRestantes <= 0) break;
           const saldoAtualLote = Number(lote.saldo_atual ?? lote.saldo_disponivel ?? 0);
@@ -689,6 +690,16 @@ export default function VendaLoteModal({ isOpen, onClose, onSuccess, parceiros, 
             .from('compras')
             .update({ saldo_atual: novoSaldo })
             .eq('id', lote.id);
+          vendaLotesInserts.push({
+            venda_id: vendaCriada.id,
+            compra_id: lote.id,
+            pontos_usados: deduzir,
+            valor_milheiro: lote.valor_milheiro || 0,
+            data_entrada: lote.data_entrada,
+          });
+        }
+        if (vendaLotesInserts.length > 0) {
+          await supabase.from('venda_lotes').insert(vendaLotesInserts);
         }
       }
 
