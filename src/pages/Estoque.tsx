@@ -70,20 +70,36 @@ export default function Estoque() {
   };
 
   const fetchEstoques = async () => {
-    const { data: estoquesCPFsView } = await supabase.from('estoque_cpfs_disponiveis').select('*');
-    const { data: programasClubesData } = await supabase.from('programas_clubes').select('parceiro_id, programa_id, liminar');
-    const { data: estoquePontosData, error: estoquePontosError } = await supabase
-      .from('estoque_pontos')
-      .select(`
+    const [
+      { data: estoquesCPFsView },
+      { data: programasClubesData },
+      { data: estoquePontosData, error: estoquePontosError },
+      { data: comprasAtivas },
+    ] = await Promise.all([
+      supabase.from('estoque_cpfs_disponiveis').select('*'),
+      supabase.from('programas_clubes').select('parceiro_id, programa_id, liminar'),
+      supabase.from('estoque_pontos').select(`
         parceiro_id,
         programa_id,
         saldo_atual,
         custo_medio,
         parceiros!estoque_pontos_parceiro_id_fkey (nome_parceiro),
         programas_fidelidade!estoque_pontos_programa_id_fkey (nome)
-      `);
+      `),
+      supabase.from('compras').select('parceiro_id, programa_id, saldo_atual, valor_milheiro').eq('status', 'Concluído').gt('saldo_atual', 0),
+    ]);
 
     if (estoquePontosError) throw estoquePontosError;
+
+    // Calcular custo médio dinâmico (média ponderada) por (parceiro, programa) a partir dos lotes ativos
+    const custoMedioDinamico: Record<string, { totalPts: number; totalValor: number }> = {};
+    for (const c of (comprasAtivas || []) as any[]) {
+      const key = `${c.parceiro_id}_${c.programa_id}`;
+      if (!custoMedioDinamico[key]) custoMedioDinamico[key] = { totalPts: 0, totalValor: 0 };
+      const pts = Number(c.saldo_atual || 0);
+      custoMedioDinamico[key].totalPts += pts;
+      custoMedioDinamico[key].totalValor += pts * Number(c.valor_milheiro || 0);
+    }
 
     const estoquesComCPFs = (estoquePontosData || []).map((estoque: any) => {
       const cpfsInfo = estoquesCPFsView?.find(
@@ -94,7 +110,11 @@ export default function Estoque() {
       );
       const temLiminar = clubeInfo?.liminar === true;
       const saldoAtual = Number(estoque.saldo_atual || 0);
-      const custoMedio = Number(estoque.custo_medio || 0);
+      const key = `${estoque.parceiro_id}_${estoque.programa_id}`;
+      const din = custoMedioDinamico[key];
+      const custoMedio = din && din.totalPts > 0
+        ? din.totalValor / din.totalPts
+        : Number(estoque.custo_medio || 0);
       const cpfsDisponiveis = temLiminar ? 999999 : (cpfsInfo?.cpfs_disponiveis ?? 0);
       const vendaConsignada = 0;
       const saldoFinal = saldoAtual - vendaConsignada;

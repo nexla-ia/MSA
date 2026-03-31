@@ -198,6 +198,32 @@ export default function VendaLoteModal({ isOpen, onClose, onSuccess, parceiros, 
     setRawCustoEmissao(custoFormatado > 0 ? formatNumberDisplay(custoFormatado) : '');
   }, [formData.quantidade_milhas]);
 
+  // Recalcular milheiro médio via FIFO quando a quantidade digitada muda
+  useEffect(() => {
+    if (lotesParaVender.length === 0 || formData.quantidade_milhas <= 0) return;
+
+    const lotesOrdenados = [...lotesParaVender].sort(
+      (a, b) => new Date(a.data_entrada).getTime() - new Date(b.data_entrada).getTime()
+    );
+
+    let restante = formData.quantidade_milhas;
+    let totalPts = 0;
+    let totalValor = 0;
+
+    for (const lote of lotesOrdenados) {
+      if (restante <= 0) break;
+      const disponivel = lote.saldo_disponivel ?? lote.total_pontos ?? lote.pontos_milhas;
+      const consumir = Math.min(restante, disponivel);
+      totalPts += consumir;
+      totalValor += consumir * (lote.valor_milheiro || 0);
+      restante -= consumir;
+    }
+
+    if (totalPts > 0) {
+      setValorMilheiroLotes(totalValor / totalPts);
+    }
+  }, [formData.quantidade_milhas, lotesParaVender]);
+
   useEffect(() => {
     if (formData.quantidade_milhas > 0 && formData.valor_milheiro > 0) {
       const custoArredondado = Math.round(valorMilheiroLotes * 100) / 100;
