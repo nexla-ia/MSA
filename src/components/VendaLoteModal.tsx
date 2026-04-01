@@ -202,7 +202,7 @@ export default function VendaLoteModal({ isOpen, onClose, onSuccess, parceiros, 
     if (lotesParaVender.length === 0) return 0;
     const qty = formData.quantidade_milhas;
     const lotesOrdenados = [...lotesParaVender].sort(
-      (a, b) => new Date(a.data_entrada).getTime() - new Date(b.data_entrada).getTime()
+      (a, b) => new Date(a.created_at || a.data_entrada).getTime() - new Date(b.created_at || b.data_entrada).getTime()
     );
     let restante = qty > 0 ? qty : Infinity;
     let totalPts = 0;
@@ -695,7 +695,7 @@ export default function VendaLoteModal({ isOpen, onClose, onSuccess, parceiros, 
       // Lotes de compra: debitar saldo e registrar (FIFO)
       const lotesCompras = lotesParaVender
         .filter(l => l.origem === 'compra')
-        .sort((a, b) => new Date(a.data_entrada).getTime() - new Date(b.data_entrada).getTime());
+        .sort((a, b) => new Date(a.created_at || a.data_entrada).getTime() - new Date(b.created_at || b.data_entrada).getTime());
       if (lotesCompras.length > 0) {
         let pontosRestantes = formData.quantidade_milhas;
         for (const lote of lotesCompras) {
