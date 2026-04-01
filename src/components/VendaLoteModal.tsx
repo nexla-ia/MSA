@@ -520,7 +520,8 @@ export default function VendaLoteModal({ isOpen, onClose, onSuccess, parceiros, 
         .eq('parceiro_id', formData.parceiro_id)
         .eq('programa_id', formData.programa_id)
         .eq('status', 'Concluído')
-        .gt('saldo_atual', 0),
+        .gt('saldo_atual', 0)
+        .neq('observacao', 'Compra no Carrinho'),
     ]);
 
     setSaldoAtual(data ? Number(data.saldo_atual || 0) : 0);

@@ -86,7 +86,7 @@ export default function Estoque() {
         parceiros!estoque_pontos_parceiro_id_fkey (nome_parceiro),
         programas_fidelidade!estoque_pontos_programa_id_fkey (nome)
       `),
-      supabase.from('compras').select('parceiro_id, programa_id, saldo_atual, valor_milheiro').eq('status', 'Concluído').gt('saldo_atual', 0),
+      supabase.from('compras').select('parceiro_id, programa_id, saldo_atual, valor_milheiro').eq('status', 'Concluído').gt('saldo_atual', 0).neq('observacao', 'Compra no Carrinho'),
     ]);
 
     if (estoquePontosError) throw estoquePontosError;
