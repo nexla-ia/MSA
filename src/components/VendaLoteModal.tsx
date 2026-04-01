@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { ChevronRight, ChevronLeft, CheckSquare, Square, ShoppingCart, ArrowLeftRight } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
@@ -109,11 +109,9 @@ export default function VendaLoteModal({ isOpen, onClose, onSuccess, parceiros, 
   const [error, setError] = useState('');
   const [saldoAtual, setSaldoAtual] = useState(0);
   const [custoMedio, setCustoMedio] = useState(0);
-  const [valorMilheiroLotes, setValorMilheiroLotes] = useState(0);
   const [lucroReal, setLucroReal] = useState(0);
   const [programas, setProgramas] = useState<Programa[]>([]);
   const [lotesParaVender, setLotesParaVender] = useState<CompraLote[]>([]);
-  const lotesParaVenderRef = useRef<CompraLote[]>([]);
 
   const [rawValorMilheiro, setRawValorMilheiro] = useState('');
   const [rawTaxaEmbarque, setRawTaxaEmbarque] = useState('');
@@ -199,18 +197,15 @@ export default function VendaLoteModal({ isOpen, onClose, onSuccess, parceiros, 
     setRawCustoEmissao(custoFormatado > 0 ? formatNumberDisplay(custoFormatado) : '');
   }, [formData.quantidade_milhas]);
 
-  // Recalcular milheiro médio via FIFO quando a quantidade digitada muda
-  useEffect(() => {
-    if (lotesParaVender.length === 0 || formData.quantidade_milhas <= 0) return;
-
+  const valorMilheiroLotes = useMemo(() => {
+    if (lotesParaVender.length === 0) return 0;
+    const qty = formData.quantidade_milhas;
     const lotesOrdenados = [...lotesParaVender].sort(
       (a, b) => new Date(a.data_entrada).getTime() - new Date(b.data_entrada).getTime()
     );
-
-    let restante = formData.quantidade_milhas;
+    let restante = qty > 0 ? qty : Infinity;
     let totalPts = 0;
     let totalValor = 0;
-
     for (const lote of lotesOrdenados) {
       if (restante <= 0) break;
       const disponivel = lote.saldo_disponivel ?? lote.total_pontos ?? lote.pontos_milhas;
@@ -219,10 +214,7 @@ export default function VendaLoteModal({ isOpen, onClose, onSuccess, parceiros, 
       totalValor += consumir * (lote.valor_milheiro || 0);
       restante -= consumir;
     }
-
-    if (totalPts > 0) {
-      setValorMilheiroLotes(totalValor / totalPts);
-    }
+    return totalPts > 0 ? totalValor / totalPts : 0;
   }, [formData.quantidade_milhas, lotesParaVender]);
 
   useEffect(() => {
@@ -583,16 +575,6 @@ export default function VendaLoteModal({ isOpen, onClose, onSuccess, parceiros, 
     const selecionadas = compras.filter(c => selectedCompras.has(c.id));
     const programaId = selecionadas[0]?.programas_fidelidade?.id || programaFiltroId;
 
-    const totalPontosVenda = selecionadas.reduce((acc, c) => acc + (c.saldo_disponivel ?? c.total_pontos ?? c.pontos_milhas), 0);
-    const valorMilheiroMedio = selecionadas.length > 0
-      ? selecionadas.reduce((acc, c) => {
-          const pts = c.saldo_disponivel ?? c.total_pontos ?? c.pontos_milhas;
-          return acc + (c.valor_milheiro || 0) * pts;
-        }, 0) / totalPontosVenda
-      : 0;
-
-    setValorMilheiroLotes(valorMilheiroMedio);
-
     const saldoRealPrograma = programaId ? (saldoPorPrograma[programaId] || 0) : 0;
 
     if (saldoRealPrograma <= 0) {
@@ -601,7 +583,6 @@ export default function VendaLoteModal({ isOpen, onClose, onSuccess, parceiros, 
     }
 
     await carregarProgramasDoParceiro(parceiroId);
-    lotesParaVenderRef.current = selecionadas;
     setLotesParaVender(selecionadas);
 
     setFormData(prev => ({
@@ -1127,26 +1108,7 @@ export default function VendaLoteModal({ isOpen, onClose, onSuccess, parceiros, 
                     value={formData.quantidade_milhas ? formData.quantidade_milhas.toLocaleString('pt-BR') : ''}
                     onChange={(e) => {
                       const value = e.target.value.replace(/\D/g, '');
-                      const qty = Number(value);
-                      setFormData(prev => ({ ...prev, quantidade_milhas: qty }));
-                      const lotes = lotesParaVenderRef.current;
-                      if (qty > 0 && lotes.length > 0) {
-                        const lotesOrdenados = [...lotes].sort(
-                          (a, b) => new Date(a.data_entrada).getTime() - new Date(b.data_entrada).getTime()
-                        );
-                        let restante = qty;
-                        let totalPts = 0;
-                        let totalValor = 0;
-                        for (const lote of lotesOrdenados) {
-                          if (restante <= 0) break;
-                          const disponivel = lote.saldo_disponivel ?? lote.total_pontos ?? lote.pontos_milhas;
-                          const consumir = Math.min(restante, disponivel);
-                          totalPts += consumir;
-                          totalValor += consumir * (lote.valor_milheiro || 0);
-                          restante -= consumir;
-                        }
-                        if (totalPts > 0) setValorMilheiroLotes(totalValor / totalPts);
-                      }
+                      setFormData(prev => ({ ...prev, quantidade_milhas: Number(value) }));
                     }}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="0"
