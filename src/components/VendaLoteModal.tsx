@@ -14,6 +14,7 @@ interface Parceiro {
 interface CompraLote {
   id: string;
   data_entrada: string;
+  created_at?: string;
   pontos_milhas: number;
   bonus: number;
   total_pontos: number;
@@ -316,10 +317,10 @@ export default function VendaLoteModal({ isOpen, onClose, onSuccess, parceiros, 
       const [comprasRes, transferenciasRes, transferPessoasRes, estoqueRes] = await Promise.all([
         supabase
           .from('compras')
-          .select('id, data_entrada, pontos_milhas, bonus, total_pontos, saldo_atual, valor_total, valor_milheiro, status, tipo, programas_fidelidade(id, nome), parceiros(nome_parceiro)')
+          .select('id, data_entrada, created_at, pontos_milhas, bonus, total_pontos, saldo_atual, valor_total, valor_milheiro, status, tipo, programas_fidelidade(id, nome), parceiros(nome_parceiro)')
           .eq('parceiro_id', id)
           .eq('status', 'Concluído')
-          .order('data_entrada', { ascending: true }),
+          .order('created_at', { ascending: false }),
         supabase
           .from('transferencia_pontos')
           .select('id, data_transferencia, destino_quantidade, destino_quantidade_bonus, status, programas_fidelidade!destino_programa_id(id, nome), parceiro_origem:parceiros!parceiro_id(nome_parceiro), origem_programa:programas_fidelidade!origem_programa_id(nome)')
@@ -479,7 +480,7 @@ export default function VendaLoteModal({ isOpen, onClose, onSuccess, parceiros, 
       }
 
       const todosLotes = [...comprasMapped, ...lotesTransferencias].sort(
-        (a, b) => new Date(b.data_entrada).getTime() - new Date(a.data_entrada).getTime()
+        (a, b) => new Date(b.created_at || b.data_entrada).getTime() - new Date(a.created_at || a.data_entrada).getTime()
       );
 
       setCompras(todosLotes);
