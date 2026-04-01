@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ChevronRight, ChevronLeft, CheckSquare, Square, ShoppingCart, ArrowLeftRight } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
@@ -113,6 +113,7 @@ export default function VendaLoteModal({ isOpen, onClose, onSuccess, parceiros, 
   const [lucroReal, setLucroReal] = useState(0);
   const [programas, setProgramas] = useState<Programa[]>([]);
   const [lotesParaVender, setLotesParaVender] = useState<CompraLote[]>([]);
+  const lotesParaVenderRef = useRef<CompraLote[]>([]);
 
   const [rawValorMilheiro, setRawValorMilheiro] = useState('');
   const [rawTaxaEmbarque, setRawTaxaEmbarque] = useState('');
@@ -600,6 +601,7 @@ export default function VendaLoteModal({ isOpen, onClose, onSuccess, parceiros, 
     }
 
     await carregarProgramasDoParceiro(parceiroId);
+    lotesParaVenderRef.current = selecionadas;
     setLotesParaVender(selecionadas);
 
     setFormData(prev => ({
@@ -1127,8 +1129,9 @@ export default function VendaLoteModal({ isOpen, onClose, onSuccess, parceiros, 
                       const value = e.target.value.replace(/\D/g, '');
                       const qty = Number(value);
                       setFormData(prev => ({ ...prev, quantidade_milhas: qty }));
-                      if (qty > 0 && lotesParaVender.length > 0) {
-                        const lotesOrdenados = [...lotesParaVender].sort(
+                      const lotes = lotesParaVenderRef.current;
+                      if (qty > 0 && lotes.length > 0) {
+                        const lotesOrdenados = [...lotes].sort(
                           (a, b) => new Date(a.data_entrada).getTime() - new Date(b.data_entrada).getTime()
                         );
                         let restante = qty;
