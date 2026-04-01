@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Package, TrendingUp, TrendingDown, History } from 'lucide-react';
+import { Package, TrendingUp, TrendingDown, History, RefreshCw } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { formatCurrency } from '../lib/formatters';
 import { FilterBar } from '../components/FilterCombobox';
@@ -245,6 +245,13 @@ export default function Estoque() {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold text-slate-800">Dashboard de Estoque</h1>
+        <button
+          onClick={fetchData}
+          className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-600 hover:bg-slate-50 shadow-sm"
+        >
+          <RefreshCw className="w-4 h-4" />
+          Atualizar
+        </button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
