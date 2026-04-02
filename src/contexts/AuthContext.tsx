@@ -36,9 +36,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     checkUser();
+  }, []);
 
+  useEffect(() => {
     const handlePermissoesAtualizadas = () => {
-      console.log('Evento permissoes-atualizadas recebido!', usuario);
       if (usuario) {
         loadPermissoes(usuario.id, usuario.nivel_acesso);
       }
@@ -203,7 +204,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     const perm = permissoes.find(p => p.recurso === recurso);
-    console.log(`Verificando permissão: ${recurso} - ${tipo}`, { perm, todasPermissoes: permissoes });
 
     if (!perm) return false;
 
