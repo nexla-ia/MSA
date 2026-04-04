@@ -1349,7 +1349,7 @@ export default function VendaLoteModal({ isOpen, onClose, onSuccess, parceiros, 
                   <label className="block text-sm font-medium text-gray-700 mb-2">Custo Milheiro</label>
                   <div className="relative">
                     <span className="absolute left-3 top-2 text-gray-500">R$</span>
-                    <input type="text" value={formatCurrency(custoMedio)} readOnly className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg bg-gray-50" />
+                    <input type="text" value={formatCurrency(valorMilheiroLotes)} readOnly className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg bg-gray-50" />
                   </div>
                 </div>
 
