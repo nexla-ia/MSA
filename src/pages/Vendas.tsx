@@ -161,7 +161,7 @@ export default function Vendas() {
     data_vencimento_venda: '',
   });
 
-  const { lucroReal, lucroBase, comissaoCalculada } = useMemo(() => {
+  const { lucroReal, lucroBase, comissaoCalculada, custoEmissaoCalc } = useMemo(() => {
     if (formData.quantidade_milhas > 0 && custoMedio > 0) {
       const custoTotal = (custoMedio * formData.quantidade_milhas) / 1000;
       const bruto = formData.valor_total - custoTotal;
@@ -171,13 +171,18 @@ export default function Vendas() {
           ? formData.valor_total * comissaoInfo.valor / 100
           : comissaoInfo.valor;
       }
+      // Usar custo_emissao do form; se ainda não calculado pelo efeito, derivar da qtd
+      const custoEmissao = formData.custo_emissao > 0
+        ? formData.custo_emissao
+        : Number(((0.1 * formData.quantidade_milhas) / 1000).toFixed(2));
       return {
         lucroBase: Number(bruto.toFixed(2)),
         comissaoCalculada: Number(comissaoCalc.toFixed(2)),
-        lucroReal: Number((bruto - comissaoCalc - (formData.custo_emissao || 0)).toFixed(2)),
+        lucroReal: Number((bruto - comissaoCalc - custoEmissao).toFixed(2)),
+        custoEmissaoCalc: custoEmissao,
       };
     }
-    return { lucroBase: 0, comissaoCalculada: 0, lucroReal: 0 };
+    return { lucroBase: 0, comissaoCalculada: 0, lucroReal: 0, custoEmissaoCalc: 0 };
   }, [formData.quantidade_milhas, formData.valor_total, formData.custo_emissao, custoMedio, comissaoInfo]);
 
   useEffect(() => {
@@ -983,13 +988,13 @@ export default function Vendas() {
                 <div>
                   <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 mb-2">
                     Lucro
-                    {(comissaoCalculada > 0 || formData.custo_emissao > 0) && (
+                    {(comissaoCalculada > 0 || custoEmissaoCalc > 0) && (
                       <span className="relative group inline-flex items-center">
                         <AlertTriangle className="w-4 h-4 text-yellow-500 cursor-help" />
                         <span className="absolute z-20 left-0 bottom-6 hidden group-hover:flex flex-col bg-gray-800 text-white text-xs rounded-lg p-2 w-60 shadow-lg gap-0.5 pointer-events-none">
                           <span>Bruto: {formatCurrency(lucroBase)}</span>
                           {comissaoCalculada > 0 && <span>Comissão (-): {formatCurrency(comissaoCalculada)}</span>}
-                          {formData.custo_emissao > 0 && <span>Custo Emissão (-): {formatCurrency(formData.custo_emissao)}</span>}
+                          {custoEmissaoCalc > 0 && <span>Custo Emissão (-): {formatCurrency(custoEmissaoCalc)}</span>}
                         </span>
                       </span>
                     )}
