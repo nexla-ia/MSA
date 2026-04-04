@@ -996,6 +996,7 @@ export default function Compras() {
           <table className="w-full">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Lote</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Data</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Parceiro</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Programa</th>
@@ -1014,13 +1015,16 @@ export default function Compras() {
             <tbody className="bg-white divide-y divide-slate-200">
               {comprasFiltradas.length === 0 ? (
                 <tr>
-                  <td colSpan={isAdmin ? 11 : 10} className="px-6 py-12 text-center text-slate-500">
+                  <td colSpan={isAdmin ? 12 : 11} className="px-6 py-12 text-center text-slate-500">
                     Nenhum registro encontrado
                   </td>
                 </tr>
               ) : (
                 comprasFiltradas.map((compra) => (
                   <tr key={compra.id} className="hover:bg-slate-50">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-slate-500" title={compra.id}>
+                      {compra.id.slice(0, 8).toUpperCase()}
+                    </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">
                       {formatDate(compra.data_entrada)}
                     </td>
