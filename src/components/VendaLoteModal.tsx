@@ -119,6 +119,7 @@ export default function VendaLoteModal({ isOpen, onClose, onSuccess, parceiros, 
   const [rawTaxaResgate, setRawTaxaResgate] = useState('');
   const [rawTaxaBagagem, setRawTaxaBagagem] = useState('');
   const [rawCustoEmissao, setRawCustoEmissao] = useState('');
+  const [custoEmissaoEhManual, setCustoEmissaoEhManual] = useState(false);
 
   const [formData, setFormData] = useState<VendaLoteFormData>({
     parceiro_id: '',
@@ -229,10 +230,13 @@ export default function VendaLoteModal({ isOpen, onClose, onSuccess, parceiros, 
           ? formData.valor_total * comissaoInfo.valor / 100
           : comissaoInfo.valor;
       }
-      // Usar custo_emissao do form; se ainda não calculado pelo efeito, derivar da qtd
-      const custoEmissao = formData.custo_emissao > 0
+      // Se o usuário editou manualmente, respeitar o valor dele (mesmo que 0).
+      // Se ainda não houve edição manual e o efeito ainda não rodou, usar fallback.
+      const custoEmissao = custoEmissaoEhManual
         ? formData.custo_emissao
-        : Number(((0.1 * formData.quantidade_milhas) / 1000).toFixed(2));
+        : formData.custo_emissao > 0
+          ? formData.custo_emissao
+          : Number(((0.1 * formData.quantidade_milhas) / 1000).toFixed(2));
       return {
         lucroBase: Number(bruto.toFixed(2)),
         comissaoCalculada: Number(comissaoCalc.toFixed(2)),
@@ -241,7 +245,7 @@ export default function VendaLoteModal({ isOpen, onClose, onSuccess, parceiros, 
       };
     }
     return { lucroBase: 0, comissaoCalculada: 0, lucroReal: 0, custoEmissaoCalc: 0 };
-  }, [formData.valor_milheiro, formData.quantidade_milhas, valorMilheiroLotes, comissaoInfo, formData.custo_emissao, formData.valor_total]);
+  }, [formData.valor_milheiro, formData.quantidade_milhas, valorMilheiroLotes, comissaoInfo, formData.custo_emissao, formData.valor_total, custoEmissaoEhManual]);
 
   const resetAll = () => {
     setStep(1);
@@ -260,6 +264,7 @@ export default function VendaLoteModal({ isOpen, onClose, onSuccess, parceiros, 
     setRawTaxaResgate('');
     setRawTaxaBagagem('');
     setRawCustoEmissao('');
+    setCustoEmissaoEhManual(false);
     setFormData({
       parceiro_id: '',
       cliente_id: '',
@@ -1414,7 +1419,7 @@ export default function VendaLoteModal({ isOpen, onClose, onSuccess, parceiros, 
                     <input
                       type="text"
                       value={rawCustoEmissao}
-                      onChange={(e) => { const val = e.target.value.replace(/[^0-9,]/g, ''); setRawCustoEmissao(val); setFormData(prev => ({ ...prev, custo_emissao: parseFloat(val.replace(',', '.')) || 0 })); }}
+                      onChange={(e) => { const val = e.target.value.replace(/[^0-9,]/g, ''); setCustoEmissaoEhManual(true); setRawCustoEmissao(val); setFormData(prev => ({ ...prev, custo_emissao: parseFloat(val.replace(',', '.')) || 0 })); }}
                       onBlur={() => { if (formData.custo_emissao) setRawCustoEmissao(formatNumberDisplay(formData.custo_emissao)); }}
                       onFocus={() => { setRawCustoEmissao(formData.custo_emissao ? String(formData.custo_emissao).replace('.', ',') : ''); }}
                       className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"

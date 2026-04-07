@@ -114,6 +114,7 @@ export default function Vendas() {
   const [rawTaxaBagagem, setRawTaxaBagagem] = useState('');
   const [rawCustoEmissao, setRawCustoEmissao] = useState('');
   const custoEmissaoManual = useRef(false);
+  const [custoEmissaoEhManual, setCustoEmissaoEhManual] = useState(false);
   const [rawTarifaDiamante, setRawTarifaDiamante] = useState('');
   const [error, setError] = useState<string>('');
   const [dialogConfig, setDialogConfig] = useState<{
@@ -171,10 +172,13 @@ export default function Vendas() {
           ? formData.valor_total * comissaoInfo.valor / 100
           : comissaoInfo.valor;
       }
-      // Usar custo_emissao do form; se ainda não calculado pelo efeito, derivar da qtd
-      const custoEmissao = formData.custo_emissao > 0
+      // Se o usuário editou manualmente, respeitar o valor dele (mesmo que 0).
+      // Se ainda não houve edição manual e o efeito ainda não rodou, usar fallback.
+      const custoEmissao = custoEmissaoEhManual
         ? formData.custo_emissao
-        : Number(((0.1 * formData.quantidade_milhas) / 1000).toFixed(2));
+        : formData.custo_emissao > 0
+          ? formData.custo_emissao
+          : Number(((0.1 * formData.quantidade_milhas) / 1000).toFixed(2));
       return {
         lucroBase: Number(bruto.toFixed(2)),
         comissaoCalculada: Number(comissaoCalc.toFixed(2)),
@@ -183,7 +187,7 @@ export default function Vendas() {
       };
     }
     return { lucroBase: 0, comissaoCalculada: 0, lucroReal: 0, custoEmissaoCalc: 0 };
-  }, [formData.quantidade_milhas, formData.valor_total, formData.custo_emissao, custoMedio, comissaoInfo]);
+  }, [formData.quantidade_milhas, formData.valor_total, formData.custo_emissao, custoMedio, comissaoInfo, custoEmissaoEhManual]);
 
   useEffect(() => {
     fetchData();
@@ -423,6 +427,7 @@ export default function Vendas() {
     setRawCustoEmissao('');
     setRawTarifaDiamante('');
     custoEmissaoManual.current = false;
+    setCustoEmissaoEhManual(false);
     setShowModal(true);
   };
 
@@ -1354,6 +1359,7 @@ export default function Vendas() {
                       onChange={(e) => {
                         const val = e.target.value.replace(/[^0-9,]/g, '');
                         custoEmissaoManual.current = true;
+                        setCustoEmissaoEhManual(true);
                         setRawCustoEmissao(val);
                         setFormData(prev => ({ ...prev, custo_emissao: parseFloat(val.replace(',', '.')) || 0 }));
                       }}
