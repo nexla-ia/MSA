@@ -64,24 +64,37 @@ export default function ContasReceber() {
     try {
       setLoading(true);
 
+      // Buscar contas sem join aninhado para evitar erros de relacionamento
       const { data, error } = await supabase
         .from('contas_receber')
-        .select(`
-          *,
-          venda:vendas!venda_id(
-            id,
-            parceiros(nome_parceiro),
-            programas_fidelidade(nome),
-            clientes(nome_cliente)
-          )
-        `)
+        .select('*')
         .not('status_pagamento', 'eq', 'cancelado')
         .order('data_vencimento', { ascending: true });
 
       if (error) throw error;
 
+      const registros = data || [];
+
+      // Buscar vendas separadamente
+      const vendaIds = registros
+        .filter(c => (c.origem_tipo === 'venda' || c.venda_id) && (c.origem_id || c.venda_id))
+        .map(c => c.origem_id || c.venda_id)
+        .filter(Boolean) as string[];
+
+      let vendaMap: Record<string, any> = {};
+      if (vendaIds.length > 0) {
+        const { data: vendas } = await supabase
+          .from('vendas')
+          .select('id, parceiro_id, programa_id, parceiros(nome_parceiro), programas_fidelidade(nome), clientes(nome_cliente)')
+          .in('id', vendaIds);
+
+        (vendas || []).forEach(v => {
+          vendaMap[v.id] = v;
+        });
+      }
+
       // Buscar dados de transferencia_pessoas separadamente
-      const transferIds = (data || [])
+      const transferIds = registros
         .filter(c => c.origem_tipo === 'transferencia_pessoas' && c.origem_id)
         .map(c => c.origem_id as string);
 
@@ -91,10 +104,6 @@ export default function ContasReceber() {
           .from('transferencia_pessoas')
           .select(`
             id,
-            quantidade,
-            origem_parceiro_id,
-            destino_parceiro_id,
-            programa_id,
             origem_parceiro:parceiros!origem_parceiro_id(nome_parceiro),
             destino_parceiro:parceiros!destino_parceiro_id(nome_parceiro),
             programas_fidelidade(nome)
@@ -108,7 +117,7 @@ export default function ContasReceber() {
 
       const hoje = new Date().toISOString().split('T')[0];
 
-      const contasFormatadas: ContaReceber[] = (data || []).map(conta => {
+      const contasFormatadas: ContaReceber[] = registros.map(conta => {
         let parceiro_nome = '-';
         let programa_nome = '-';
         let origem_descricao = 'Outro';
@@ -116,11 +125,12 @@ export default function ContasReceber() {
         const origemTipo = conta.origem_tipo || (conta.venda_id ? 'venda' : null);
 
         if (origemTipo === 'venda') {
-          const venda = conta.venda;
+          const vendaId = conta.origem_id || conta.venda_id;
+          const venda = vendaId ? vendaMap[vendaId] : null;
           if (venda) {
-            const nome = venda.parceiros?.nome_parceiro || venda.clientes?.nome_cliente;
+            const nome = (venda.parceiros as any)?.nome_parceiro || (venda.clientes as any)?.nome_cliente;
             parceiro_nome = nome || '-';
-            programa_nome = venda.programas_fidelidade?.nome || '-';
+            programa_nome = (venda.programas_fidelidade as any)?.nome || '-';
           }
           origem_descricao = 'Venda';
         } else if (origemTipo === 'transferencia_pessoas' && conta.origem_id) {
