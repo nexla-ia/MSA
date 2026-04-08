@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, ShoppingCart, Info, Upload, FileSpreadsheet, Download, Pencil, Trash2 } from 'lucide-react';
+import { Plus, ShoppingCart, Info, Upload, FileSpreadsheet, Download, Pencil, Trash2, AlertTriangle, TrendingUp, Receipt, BarChart2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import Modal from '../components/Modal';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -91,6 +91,15 @@ interface Compra {
   };
 }
 
+interface VendaImpacto {
+  id: string;
+  data_venda: string;
+  quantidade_milhas: number;
+  valor_total: number;
+  status: string;
+  clientes?: { nome_cliente: string }[] | null;
+}
+
 const TIPOS_ENTRADA = [
   'Compra de Pontos/Milhas',
   'Compra Bonificada',
@@ -130,6 +139,12 @@ export default function Compras() {
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Compra | null>(null);
+  const [impactoEdicao, setImpactoEdicao] = useState<{
+    loading: boolean;
+    estoque: { saldo_atual: number; custo_medio: number; valor_total: number } | null;
+    contas: { count: number; valor: number };
+    vendas: VendaImpacto[];
+  } | null>(null);
   const [formData, setFormData] = useState<Partial<Compra>>({
     agendar_entrada: false,
     agendamento_recorrente: false,
@@ -585,6 +600,7 @@ export default function Compras() {
       setShowSaveConfirmation(false);
       setIsModalOpen(false);
       setEditingItem(null);
+      setImpactoEdicao(null);
       setMultipleEntries(false);
       setExcelData([]);
       setShowPreview(false);
@@ -622,10 +638,50 @@ export default function Compras() {
     }
   };
 
-  const handleEdit = (compra: Compra) => {
+  const handleEdit = async (compra: Compra) => {
     setEditingItem(compra);
     setFormData(compra);
     setIsModalOpen(true);
+
+    if (compra.status === 'Concluído' && compra.parceiro_id && compra.programa_id) {
+      setImpactoEdicao({ loading: true, estoque: null, contas: { count: 0, valor: 0 }, vendas: [] });
+
+      const [estoqueRes, contasRes, vendasRes] = await Promise.all([
+        supabase
+          .from('estoque_pontos')
+          .select('saldo_atual, custo_medio, valor_total')
+          .eq('parceiro_id', compra.parceiro_id)
+          .eq('programa_id', compra.programa_id)
+          .single(),
+        supabase
+          .from('contas_a_pagar')
+          .select('valor_parcela')
+          .eq('origem_tipo', 'compra')
+          .eq('origem_id', compra.id)
+          .in('status_pagamento', ['pendente', 'atrasado']),
+        supabase
+          .from('vendas')
+          .select('id, data_venda, quantidade_milhas, valor_total, status, clientes(nome_cliente)')
+          .eq('parceiro_id', compra.parceiro_id)
+          .eq('programa_id', compra.programa_id)
+          .gte('data_venda', compra.data_entrada)
+          .neq('status', 'cancelada')
+          .order('data_venda', { ascending: true })
+          .limit(20),
+      ]);
+
+      setImpactoEdicao({
+        loading: false,
+        estoque: estoqueRes.data ?? null,
+        contas: {
+          count: contasRes.data?.length ?? 0,
+          valor: contasRes.data?.reduce((s, c) => s + (c.valor_parcela || 0), 0) ?? 0,
+        },
+        vendas: (vendasRes.data as VendaImpacto[]) ?? [],
+      });
+    } else {
+      setImpactoEdicao(null);
+    }
   };
 
   const executarDelete = async (id: string, cancelarContas: boolean) => {
@@ -687,19 +743,59 @@ export default function Compras() {
   };
 
   const handleDelete = async (id: string) => {
-    // Verifica se há contas a pagar associadas (pendentes ou atrasadas)
-    const { data: contas } = await supabase
-      .from('contas_a_pagar')
-      .select('id, valor_parcela, numero_parcela, total_parcelas, status_pagamento')
-      .eq('origem_tipo', 'compra')
-      .eq('origem_id', id)
-      .in('status_pagamento', ['pendente', 'atrasado']);
+    const compra = compras.find(c => c.id === id);
 
-    const temContas = contas && contas.length > 0;
+    // Buscar vendas e contas a pagar em paralelo
+    const queries: Promise<any>[] = [
+      supabase
+        .from('contas_a_pagar')
+        .select('id, valor_parcela, status_pagamento')
+        .eq('origem_tipo', 'compra')
+        .eq('origem_id', id)
+        .in('status_pagamento', ['pendente', 'atrasado']),
+    ];
+
+    if (compra?.parceiro_id && compra?.programa_id && compra?.data_entrada) {
+      queries.push(
+        supabase
+          .from('vendas')
+          .select('id, data_venda, quantidade_milhas, valor_total, clientes(nome_cliente)')
+          .eq('parceiro_id', compra.parceiro_id)
+          .eq('programa_id', compra.programa_id)
+          .gte('data_venda', compra.data_entrada)
+          .neq('status', 'cancelada')
+          .order('data_venda', { ascending: true })
+          .limit(10)
+      );
+    }
+
+    const [contasRes, vendasRes] = await Promise.all(queries);
+    const contas = contasRes?.data ?? [];
+    const vendas: any[] = vendasRes?.data ?? [];
+
+    const temContas = contas.length > 0;
+    const temVendas = vendas.length > 0;
+
+    // Bloquear exclusão quando há vendas associadas ao estoque
+    if (temVendas) {
+      const listaVendas = vendas
+        .map((v: any) => `• ${formatDate(v.data_venda)} — ${v.clientes?.nome_cliente ?? v.clientes?.[0]?.nome_cliente ?? '?'} — ${v.quantidade_milhas.toLocaleString('pt-BR')} pts — ${formatCurrency(v.valor_total)}`)
+        .join('\n');
+
+      setDialogConfig({
+        isOpen: true,
+        type: 'error',
+        title: 'Exclusão Bloqueada — Há Vendas Vinculadas',
+        message: `Existem ${vendas.length} venda(s) feita(s) após esta compra para o mesmo parceiro/programa:\n\n${listaVendas}\n\nCancele essas vendas primeiro (os pontos voltam ao estoque) e então exclua esta compra.`,
+        confirmText: 'Entendi',
+        onConfirm: () => setDialogConfig(prev => ({ ...prev, isOpen: false })),
+      });
+      return;
+    }
 
     if (temContas) {
-      const totalContas = contas!.length;
-      const valorTotal = contas!.reduce((sum, c) => sum + (c.valor_parcela || 0), 0);
+      const totalContas = contas.length;
+      const valorTotal = contas.reduce((sum: number, c: any) => sum + (c.valor_parcela || 0), 0);
 
       setDialogConfig({
         isOpen: true,
@@ -1105,8 +1201,145 @@ export default function Compras() {
         </div>
       </div>
 
-      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Nova Compra (Entrada)">
+      <Modal isOpen={isModalOpen} onClose={() => { setIsModalOpen(false); setEditingItem(null); setImpactoEdicao(null); }} title={editingItem ? 'Editar Compra (Entrada)' : 'Nova Compra (Entrada)'}>
         <form onSubmit={handleSubmit} className="space-y-6">
+
+          {/* Painel de impacto da edição */}
+          {editingItem && editingItem.status === 'Concluído' && (() => {
+            const mudouEstrutura =
+              formData.parceiro_id !== editingItem.parceiro_id ||
+              formData.programa_id !== editingItem.programa_id ||
+              Number(formData.pontos_milhas) !== Number(editingItem.pontos_milhas) ||
+              Number(formData.bonus ?? 0) !== Number(editingItem.bonus ?? 0);
+            const mudouSoValor = !mudouEstrutura && (
+              Number(formData.valor_total) !== Number(editingItem.valor_total) ||
+              Number(formData.valor_milheiro) !== Number(editingItem.valor_milheiro)
+            );
+            const vendas = impactoEdicao?.vendas ?? [];
+            const temVendas = vendas.length > 0;
+            const alertaVermelho = mudouEstrutura && temVendas;
+
+            return (
+              <div className={`rounded-lg border p-4 ${alertaVermelho ? 'border-red-300 bg-red-50' : 'border-amber-300 bg-amber-50'}`}>
+                <div className="flex items-center gap-2 mb-3">
+                  <AlertTriangle className={`w-5 h-5 flex-shrink-0 ${alertaVermelho ? 'text-red-600' : 'text-amber-600'}`} />
+                  <span className={`text-sm font-semibold ${alertaVermelho ? 'text-red-800' : 'text-amber-800'}`}>Impacto da Edição</span>
+                  {impactoEdicao?.loading && <span className="text-xs text-amber-600 italic">Carregando...</span>}
+                </div>
+
+                {impactoEdicao && !impactoEdicao.loading && (
+                  <>
+                    {/* Cards de resumo */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
+                      {/* Estoque */}
+                      <div className="flex items-start gap-2 bg-white rounded-md p-3 border border-amber-200">
+                        <BarChart2 className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" />
+                        <div>
+                          <p className="text-xs font-medium text-slate-600">Estoque atual</p>
+                          {impactoEdicao.estoque ? (
+                            <>
+                              <p className="text-sm font-bold text-slate-800">
+                                {impactoEdicao.estoque.saldo_atual.toLocaleString('pt-BR')} pts
+                              </p>
+                              <p className="text-xs text-slate-500">
+                                CM: {formatCurrency((impactoEdicao.estoque.custo_medio ?? 0) / 1000)}/mil
+                              </p>
+                            </>
+                          ) : (
+                            <p className="text-xs text-slate-400">Sem registro</p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Contas a pagar */}
+                      <div className="flex items-start gap-2 bg-white rounded-md p-3 border border-amber-200">
+                        <Receipt className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" />
+                        <div>
+                          <p className="text-xs font-medium text-slate-600">Contas a pagar</p>
+                          {impactoEdicao.contas.count > 0 ? (
+                            <>
+                              <p className="text-sm font-bold text-slate-800">
+                                {impactoEdicao.contas.count} parcela{impactoEdicao.contas.count > 1 ? 's' : ''}
+                              </p>
+                              <p className="text-xs text-slate-500">{formatCurrency(impactoEdicao.contas.valor)} pendente{impactoEdicao.contas.count > 1 ? 's' : ''}</p>
+                            </>
+                          ) : (
+                            <p className="text-sm text-slate-400">Nenhuma pendente</p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Vendas posteriores */}
+                      <div className={`flex items-start gap-2 bg-white rounded-md p-3 border ${alertaVermelho ? 'border-red-300' : 'border-amber-200'}`}>
+                        <TrendingUp className={`w-4 h-4 mt-0.5 flex-shrink-0 ${alertaVermelho ? 'text-red-500' : 'text-amber-500'}`} />
+                        <div>
+                          <p className="text-xs font-medium text-slate-600">Vendas após esta compra</p>
+                          {temVendas ? (
+                            <>
+                              <p className={`text-sm font-bold ${alertaVermelho ? 'text-red-700' : 'text-slate-800'}`}>
+                                {vendas.length} venda{vendas.length > 1 ? 's' : ''}
+                              </p>
+                              <p className="text-xs text-slate-500">
+                                {mudouEstrutura ? 'Atenção: pode haver inconsistência' : 'CMV histórico fixado'}
+                              </p>
+                            </>
+                          ) : (
+                            <p className="text-sm text-slate-400">Nenhuma venda posterior</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Lista de vendas */}
+                    {temVendas && (
+                      <div className="mb-3">
+                        <p className="text-xs font-semibold text-slate-600 mb-1">Vendas encontradas:</p>
+                        <div className="rounded-md border border-amber-200 overflow-hidden">
+                          <table className="w-full text-xs">
+                            <thead className="bg-amber-100 text-slate-600">
+                              <tr>
+                                <th className="text-left px-2 py-1">Data</th>
+                                <th className="text-left px-2 py-1">Cliente</th>
+                                <th className="text-right px-2 py-1">Qtd pontos</th>
+                                <th className="text-right px-2 py-1">Valor</th>
+                              </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-amber-100">
+                              {vendas.map(v => (
+                                <tr key={v.id}>
+                                  <td className="px-2 py-1 text-slate-700">{formatDate(v.data_venda)}</td>
+                                  <td className="px-2 py-1 text-slate-700">{v.clientes?.[0]?.nome_cliente ?? '—'}</td>
+                                  <td className="px-2 py-1 text-right text-slate-700">{v.quantidade_milhas.toLocaleString('pt-BR')}</td>
+                                  <td className="px-2 py-1 text-right text-slate-700">{formatCurrency(v.valor_total)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Recomendação contextual */}
+                    {alertaVermelho ? (
+                      <div className="rounded-md bg-red-100 border border-red-300 p-3 text-xs text-red-800">
+                        <strong>Atenção:</strong> Você alterou quantidade de pontos, parceiro ou programa e há vendas vinculadas a este estoque.<br />
+                        Recomendado: <strong>1)</strong> Cancele as vendas acima (pontos retornam ao estoque) → <strong>2)</strong> Edite esta compra → <strong>3)</strong> Relance as vendas.
+                      </div>
+                    ) : mudouSoValor && temVendas ? (
+                      <p className="text-xs text-amber-700">
+                        Correção de valor: o CMV das vendas já realizadas fica como está (histórico fixado). Apenas o custo médio do estoque será atualizado.
+                      </p>
+                    ) : (
+                      <p className="text-xs text-amber-700">
+                        Salvar irá <strong>reverter</strong> o lançamento atual no estoque e registrar o novo valor automaticamente.
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+            );
+          })()}
+
           <div className="bg-blue-50 p-4 rounded-lg border-2 border-blue-200">
             <label className="flex items-center gap-3 cursor-pointer">
               <input
@@ -1650,21 +1883,37 @@ export default function Compras() {
           </>
           )}
 
-          <div className="flex justify-end gap-3 pt-4 border-t">
-            <button
-              type="button"
-              onClick={() => setIsModalOpen(false)}
-              className="px-4 py-2 border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-            >
-              Salvar
-            </button>
-          </div>
+          {(() => {
+            const bloqueadoPorVendas = !!editingItem &&
+              editingItem.status === 'Concluído' &&
+              !impactoEdicao?.loading &&
+              (impactoEdicao?.vendas?.length ?? 0) > 0 &&
+              (
+                formData.parceiro_id !== editingItem.parceiro_id ||
+                formData.programa_id !== editingItem.programa_id ||
+                Number(formData.pontos_milhas) !== Number(editingItem.pontos_milhas) ||
+                Number(formData.bonus ?? 0) !== Number(editingItem.bonus ?? 0)
+              );
+            return (
+              <div className="flex justify-end gap-3 pt-4 border-t">
+                <button
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  className="px-4 py-2 border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={bloqueadoPorVendas}
+                  title={bloqueadoPorVendas ? 'Cancele as vendas vinculadas antes de editar a quantidade de pontos' : undefined}
+                  className={`px-4 py-2 rounded-lg text-white ${bloqueadoPorVendas ? 'bg-slate-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
+                >
+                  {bloqueadoPorVendas ? 'Salvar (bloqueado)' : 'Salvar'}
+                </button>
+              </div>
+            );
+          })()}
         </form>
       </Modal>
 

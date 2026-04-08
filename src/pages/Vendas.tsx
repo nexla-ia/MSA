@@ -519,9 +519,10 @@ export default function Vendas() {
         }
       }
 
+      // Re-fetch saldo no momento do submit para evitar usar valor stale do form
       const { data: estoqueCheck } = await supabase
         .from('estoque_pontos')
-        .select('id')
+        .select('id, saldo_atual')
         .eq('parceiro_id', formData.parceiro_id)
         .eq('programa_id', formData.programa_id)
         .maybeSingle();
@@ -534,8 +535,12 @@ export default function Vendas() {
         );
       }
 
-      if (formData.quantidade_milhas > saldoAtual) {
-        throw new Error(`Saldo insuficiente. Saldo disponível: ${saldoAtual.toLocaleString('pt-BR')}`);
+      const saldoFresh = Number(estoqueCheck.saldo_atual || 0);
+      if (saldoFresh !== saldoAtual) {
+        setSaldoAtual(saldoFresh); // Atualiza display
+      }
+      if (formData.quantidade_milhas > saldoFresh) {
+        throw new Error(`Saldo insuficiente. Saldo atual: ${saldoFresh.toLocaleString('pt-BR')} — Quantidade solicitada: ${formData.quantidade_milhas.toLocaleString('pt-BR')}`);
       }
 
       if (formData.quantidade_milhas <= 0) {
