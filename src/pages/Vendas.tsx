@@ -444,17 +444,19 @@ export default function Vendas() {
       message: 'Tem certeza que deseja excluir esta venda?\n\nEsta ação afetará o estoque de pontos/milhas, os localizadores e contas a receber associadas. Esta ação não pode ser desfeita.',
       onConfirm: async () => {
         try {
-          if (isAdmin && usuario) {
-            await supabase.rpc('set_admin_mode', { usuario_id: usuario.id, is_admin: true });
-          }
-
-          const { error } = await supabase
-            .from('vendas')
-            .delete()
-            .eq('id', id);
+          let error: any = null;
 
           if (isAdmin && usuario) {
-            await supabase.rpc('set_admin_mode', { usuario_id: usuario.id, is_admin: false });
+            // set_config é transaction-local — usar RPC que faz set_config + DELETE
+            // na mesma transação para evitar que o trigger bloqueie
+            const { error: rpcError } = await supabase.rpc('admin_delete_venda', {
+              p_venda_id: id,
+              p_usuario_id: usuario.id,
+            });
+            error = rpcError;
+          } else {
+            const { error: delError } = await supabase.from('vendas').delete().eq('id', id);
+            error = delError;
           }
 
           if (error) throw error;
@@ -477,9 +479,6 @@ export default function Vendas() {
 
           fetchData();
         } catch (error: any) {
-          if (isAdmin && usuario) {
-            await supabase.rpc('set_admin_mode', { usuario_id: usuario.id, is_admin: false });
-          }
           setDialogConfig({
             isOpen: true,
             type: 'error',
