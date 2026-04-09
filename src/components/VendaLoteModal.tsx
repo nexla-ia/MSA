@@ -672,6 +672,10 @@ export default function VendaLoteModal({ isOpen, onClose, onSuccess, parceiros, 
     setSaving(true);
 
     try {
+      if (!formData.data_vencimento_venda) {
+        throw new Error('Informe a data de vencimento para gerar a conta a receber.');
+      }
+
       if (formData.localizador) {
         const { data: localizadorExiste } = await supabase
           .from('vendas')
@@ -811,7 +815,7 @@ export default function VendaLoteModal({ isOpen, onClose, onSuccess, parceiros, 
         }]);
       }
 
-      // Criar conta a receber se data de vencimento informada
+      // Criar conta a receber (data de vencimento é obrigatória)
       if (formData.data_vencimento_venda) {
         const { error: contaError } = await supabase.from('contas_receber').insert([{
           venda_id: vendaCriada.id,
@@ -1445,11 +1449,14 @@ export default function VendaLoteModal({ isOpen, onClose, onSuccess, parceiros, 
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Data de Vencimento</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Data de Vencimento <span className="text-red-500">*</span>
+                  </label>
                   <input
                     type="date"
                     value={formData.data_vencimento_venda}
                     onChange={(e) => setFormData(prev => ({ ...prev, data_vencimento_venda: e.target.value }))}
+                    required
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
