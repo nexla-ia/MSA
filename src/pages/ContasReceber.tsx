@@ -29,8 +29,10 @@ type ContaReceber = {
 };
 
 type RecebimentoForm = {
+  tipo_pagamento: 'total' | 'parcial';
   data_pagamento: string;
   valor_pago: number;
+  nova_data_vencimento: string;
   observacao: string;
 };
 
@@ -38,14 +40,16 @@ export default function ContasReceber() {
   const [contas, setContas] = useState<ContaReceber[]>([]);
   const [loading, setLoading] = useState(true);
   const [busca, setBusca] = useState('');
-  const [filtroStatus, setFiltroStatus] = useState<'todos' | 'pendente' | 'pago' | 'atrasado'>('todos');
+  const [filtroStatus, setFiltroStatus] = useState<'todos' | 'pendente' | 'pago' | 'atrasado' | 'parcial'>('todos');
   const [filtroOrigem, setFiltroOrigem] = useState<'todos' | 'venda' | 'transferencia_pessoas'>('todos');
   const [contaSelecionada, setContaSelecionada] = useState<ContaReceber | null>(null);
   const [showRecebimentoModal, setShowRecebimentoModal] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [recebimentoForm, setRecebimentoForm] = useState<RecebimentoForm>({
+    tipo_pagamento: 'total',
     data_pagamento: new Date().toISOString().split('T')[0],
     valor_pago: 0,
+    nova_data_vencimento: '',
     observacao: ''
   });
   const [dialogConfig, setDialogConfig] = useState<{
@@ -170,8 +174,10 @@ export default function ContasReceber() {
   const abrirRecebimento = (conta: ContaReceber) => {
     setContaSelecionada(conta);
     setRecebimentoForm({
+      tipo_pagamento: 'total',
       data_pagamento: new Date().toISOString().split('T')[0],
       valor_pago: conta.valor_parcela,
+      nova_data_vencimento: '',
       observacao: ''
     });
     setShowRecebimentoModal(true);
@@ -181,20 +187,74 @@ export default function ContasReceber() {
     e.preventDefault();
     if (!contaSelecionada) return;
 
+    const isParcial =
+      recebimentoForm.tipo_pagamento === 'parcial' &&
+      recebimentoForm.valor_pago < contaSelecionada.valor_parcela;
+
+    if (isParcial && !recebimentoForm.nova_data_vencimento) {
+      setDialogConfig({
+        isOpen: true,
+        type: 'error',
+        title: 'Campo obrigatório',
+        message: 'Informe a nova data de vencimento para o saldo restante.'
+      });
+      return;
+    }
+
     try {
       setSalvando(true);
-      const { error } = await supabase
-        .from('contas_receber')
-        .update({
-          status_pagamento: 'pago',
-          data_pagamento: recebimentoForm.data_pagamento,
-          valor_pago: recebimentoForm.valor_pago,
-          observacao: recebimentoForm.observacao || contaSelecionada.observacao,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', contaSelecionada.id);
 
-      if (error) throw error;
+      if (isParcial) {
+        const saldoRestante = contaSelecionada.valor_parcela - recebimentoForm.valor_pago;
+
+        // Atualizar conta atual como parcialmente paga
+        const { error: errUpdate } = await supabase
+          .from('contas_receber')
+          .update({
+            status_pagamento: 'parcial',
+            data_pagamento: recebimentoForm.data_pagamento,
+            valor_pago: recebimentoForm.valor_pago,
+            observacao: recebimentoForm.observacao || contaSelecionada.observacao,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', contaSelecionada.id);
+
+        if (errUpdate) throw errUpdate;
+
+        // Criar nova conta para o saldo restante
+        const { error: errInsert } = await supabase
+          .from('contas_receber')
+          .insert({
+            venda_id: contaSelecionada.venda_id,
+            origem_tipo: contaSelecionada.origem_tipo,
+            origem_id: contaSelecionada.origem_id,
+            data_vencimento: recebimentoForm.nova_data_vencimento,
+            valor_parcela: saldoRestante,
+            numero_parcela: contaSelecionada.numero_parcela,
+            total_parcelas: contaSelecionada.total_parcelas,
+            forma_pagamento: contaSelecionada.forma_pagamento,
+            conta_bancaria_id: contaSelecionada.conta_bancaria_id,
+            cartao_id: contaSelecionada.cartao_id,
+            status_pagamento: 'pendente',
+            observacao: `Saldo restante de pagamento parcial em ${recebimentoForm.data_pagamento}`
+          });
+
+        if (errInsert) throw errInsert;
+      } else {
+        // Pagamento total
+        const { error } = await supabase
+          .from('contas_receber')
+          .update({
+            status_pagamento: 'pago',
+            data_pagamento: recebimentoForm.data_pagamento,
+            valor_pago: recebimentoForm.valor_pago,
+            observacao: recebimentoForm.observacao || contaSelecionada.observacao,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', contaSelecionada.id);
+
+        if (error) throw error;
+      }
 
       setShowRecebimentoModal(false);
       setContaSelecionada(null);
@@ -202,7 +262,9 @@ export default function ContasReceber() {
         isOpen: true,
         type: 'success',
         title: 'Sucesso',
-        message: 'Recebimento registrado com sucesso!'
+        message: isParcial
+          ? `Pagamento parcial registrado! Saldo restante de ${formatCurrency(contaSelecionada.valor_parcela - recebimentoForm.valor_pago)} criado com vencimento em ${formatDate(recebimentoForm.nova_data_vencimento)}.`
+          : 'Recebimento registrado com sucesso!'
       });
       await carregarContas();
     } catch (error: any) {
@@ -288,6 +350,7 @@ export default function ContasReceber() {
   const getStatusInfo = (status: string) => {
     switch (status) {
       case 'pago':     return { label: 'Pago',     color: 'bg-green-100 text-green-800' };
+      case 'parcial':  return { label: 'Parcial',  color: 'bg-blue-100 text-blue-800' };
       case 'atrasado': return { label: 'Atrasado', color: 'bg-red-100 text-red-800' };
       case 'cancelado':return { label: 'Cancelado',color: 'bg-slate-100 text-slate-600' };
       default:         return { label: 'Pendente', color: 'bg-yellow-100 text-yellow-800' };
@@ -388,6 +451,7 @@ export default function ContasReceber() {
               <option value="todos">Todos os status</option>
               <option value="pendente">Pendente</option>
               <option value="atrasado">Atrasado</option>
+              <option value="parcial">Parcial</option>
               <option value="pago">Pago</option>
             </select>
           </div>
@@ -443,7 +507,12 @@ export default function ContasReceber() {
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap text-sm font-semibold text-slate-900">
                         {formatCurrency(conta.valor_parcela)}
-                        {conta.valor_pago != null && conta.valor_pago !== conta.valor_parcela && (
+                        {conta.status_pagamento === 'parcial' && conta.valor_pago != null && (
+                          <div className="text-xs font-normal text-blue-600">
+                            Pago: {formatCurrency(conta.valor_pago)} | Restante: {formatCurrency(conta.valor_parcela - conta.valor_pago)}
+                          </div>
+                        )}
+                        {conta.status_pagamento === 'pago' && conta.valor_pago != null && conta.valor_pago !== conta.valor_parcela && (
                           <div className="text-xs font-normal text-green-600">
                             Recebido: {formatCurrency(conta.valor_pago)}
                           </div>
@@ -464,15 +533,7 @@ export default function ContasReceber() {
                         </span>
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap text-sm">
-                        {conta.status_pagamento !== 'pago' ? (
-                          <button
-                            onClick={() => abrirRecebimento(conta)}
-                            className="flex items-center gap-1 text-green-600 hover:text-green-800 font-medium transition-colors"
-                          >
-                            <CheckCircle className="w-4 h-4" />
-                            Registrar
-                          </button>
-                        ) : (
+                        {conta.status_pagamento === 'pago' ? (
                           <button
                             onClick={() => confirmarEstorno(conta)}
                             className="flex items-center gap-1 text-slate-500 hover:text-slate-700 transition-colors"
@@ -480,6 +541,16 @@ export default function ContasReceber() {
                           >
                             <RotateCcw className="w-4 h-4" />
                             Estornar
+                          </button>
+                        ) : conta.status_pagamento === 'parcial' ? (
+                          <span className="text-xs text-blue-600 font-medium">Pgto parcial</span>
+                        ) : (
+                          <button
+                            onClick={() => abrirRecebimento(conta)}
+                            className="flex items-center gap-1 text-green-600 hover:text-green-800 font-medium transition-colors"
+                          >
+                            <CheckCircle className="w-4 h-4" />
+                            Registrar
                           </button>
                         )}
                       </td>
@@ -531,6 +602,43 @@ export default function ContasReceber() {
               </div>
             </div>
 
+            {/* Tipo de pagamento */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">Tipo de Pagamento</label>
+              <div className="flex gap-3">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="tipo_pagamento"
+                    value="total"
+                    checked={recebimentoForm.tipo_pagamento === 'total'}
+                    onChange={() => setRecebimentoForm({
+                      ...recebimentoForm,
+                      tipo_pagamento: 'total',
+                      valor_pago: contaSelecionada.valor_parcela
+                    })}
+                    className="accent-green-600"
+                  />
+                  <span className="text-sm text-slate-700">Pagamento total</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="tipo_pagamento"
+                    value="parcial"
+                    checked={recebimentoForm.tipo_pagamento === 'parcial'}
+                    onChange={() => setRecebimentoForm({
+                      ...recebimentoForm,
+                      tipo_pagamento: 'parcial',
+                      valor_pago: 0
+                    })}
+                    className="accent-blue-600"
+                  />
+                  <span className="text-sm text-slate-700">Pagamento parcial</span>
+                </label>
+              </div>
+            </div>
+
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">
                 Data do Recebimento <span className="text-red-500">*</span>
@@ -561,12 +669,33 @@ export default function ContasReceber() {
                   className="w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 />
               </div>
-              {recebimentoForm.valor_pago !== contaSelecionada.valor_parcela && (
+              {recebimentoForm.tipo_pagamento === 'parcial' && recebimentoForm.valor_pago > 0 && recebimentoForm.valor_pago < contaSelecionada.valor_parcela && (
+                <p className="text-xs text-blue-600 mt-1">
+                  Saldo restante: {formatCurrency(contaSelecionada.valor_parcela - recebimentoForm.valor_pago)}
+                </p>
+              )}
+              {recebimentoForm.tipo_pagamento === 'total' && recebimentoForm.valor_pago !== contaSelecionada.valor_parcela && (
                 <p className="text-xs text-amber-600 mt-1">
                   Valor diferente do esperado ({formatCurrency(contaSelecionada.valor_parcela)})
                 </p>
               )}
             </div>
+
+            {/* Nova data de vencimento — só aparece no pagamento parcial */}
+            {recebimentoForm.tipo_pagamento === 'parcial' && (
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Nova data de vencimento (saldo restante) <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="date"
+                  value={recebimentoForm.nova_data_vencimento}
+                  onChange={(e) => setRecebimentoForm({ ...recebimentoForm, nova_data_vencimento: e.target.value })}
+                  required={recebimentoForm.tipo_pagamento === 'parcial'}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            )}
 
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Observação</label>
@@ -593,7 +722,7 @@ export default function ContasReceber() {
                 className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
               >
                 <CheckCircle className="w-4 h-4" />
-                {salvando ? 'Salvando...' : 'Confirmar Recebimento'}
+                {salvando ? 'Salvando...' : recebimentoForm.tipo_pagamento === 'parcial' ? 'Confirmar Pagamento Parcial' : 'Confirmar Recebimento'}
               </button>
             </div>
           </form>
