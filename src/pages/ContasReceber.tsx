@@ -27,6 +27,8 @@ type ContaReceber = {
   parceiro_nome?: string;
   programa_nome?: string;
   origem_descricao?: string;
+  localizador?: string | null;
+  ordem_compra?: string | null;
 };
 
 type RecebimentoForm = {
@@ -91,7 +93,7 @@ export default function ContasReceber() {
       if (vendaIds.length > 0) {
         const { data: vendas } = await supabase
           .from('vendas')
-          .select('id, parceiro_id, programa_id, parceiros(nome_parceiro), programas_fidelidade(nome), clientes(nome_cliente)')
+          .select('id, parceiro_id, programa_id, ordem_compra, parceiros(nome_parceiro), programas_fidelidade(nome), clientes(nome_cliente), localizadores(codigo_localizador)')
           .in('id', vendaIds);
 
         (vendas || []).forEach(v => {
@@ -127,6 +129,8 @@ export default function ContasReceber() {
         let parceiro_nome = '-';
         let programa_nome = '-';
         let origem_descricao = 'Outro';
+        let localizador: string | null = null;
+        let ordem_compra: string | null = null;
 
         const origemTipo = conta.origem_tipo || (conta.venda_id ? 'venda' : null);
 
@@ -137,6 +141,9 @@ export default function ContasReceber() {
             const nome = (venda.parceiros as any)?.nome_parceiro || (venda.clientes as any)?.nome_cliente;
             parceiro_nome = nome || '-';
             programa_nome = (venda.programas_fidelidade as any)?.nome || '-';
+            const locs = venda.localizadores as any[];
+            localizador = locs?.length > 0 ? locs[0].codigo_localizador : null;
+            ordem_compra = venda.ordem_compra || null;
           }
           origem_descricao = 'Venda';
         } else if (origemTipo === 'transferencia_pessoas' && conta.origem_id) {
@@ -162,6 +169,8 @@ export default function ContasReceber() {
           parceiro_nome,
           programa_nome,
           origem_descricao,
+          localizador,
+          ordem_compra,
         };
       });
 
@@ -465,6 +474,7 @@ export default function ContasReceber() {
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Origem</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Ref.</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Parceiro / Partes</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Programa</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Parcela</th>
@@ -481,7 +491,7 @@ export default function ContasReceber() {
                 if (contasFiltradas.length === 0) {
                   return (
                     <tr>
-                      <td colSpan={10} className="px-4 py-12 text-center text-slate-500">
+                      <td colSpan={11} className="px-4 py-12 text-center text-slate-500">
                         Nenhuma conta encontrada
                       </td>
                     </tr>
@@ -554,6 +564,13 @@ export default function ContasReceber() {
                           {renderOrigem(conta)}
                         </div>
                       </td>
+                      <td className="px-4 py-4 whitespace-nowrap text-xs text-slate-500">
+                        {conta.localizador
+                          ? <span className="font-mono bg-slate-100 px-1.5 py-0.5 rounded" title="Localizador">{conta.localizador}</span>
+                          : conta.ordem_compra
+                          ? <span className="font-mono bg-slate-100 px-1.5 py-0.5 rounded" title="OC">{conta.ordem_compra}</span>
+                          : <span className="text-slate-300">—</span>}
+                      </td>
                       <td className="px-4 py-4 text-sm text-slate-900 max-w-[200px] truncate" title={conta.parceiro_nome}>{conta.parceiro_nome}</td>
                       <td className="px-4 py-4 whitespace-nowrap text-sm text-slate-900">{conta.programa_nome}</td>
                       <td className="px-4 py-4 whitespace-nowrap text-sm text-slate-600">{conta.numero_parcela}/{conta.total_parcelas}</td>
@@ -587,6 +604,7 @@ export default function ContasReceber() {
                           <td className="px-4 py-3 whitespace-nowrap pl-10">
                             <span className="text-xs text-slate-400 italic">↳ saldo restante</span>
                           </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-xs text-slate-400">—</td>
                           <td className="px-4 py-3 text-sm text-slate-600 max-w-[200px] truncate">{filho.parceiro_nome}</td>
                           <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-600">{filho.programa_nome}</td>
                           <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-500">{filho.numero_parcela}/{filho.total_parcelas}</td>
