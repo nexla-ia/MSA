@@ -247,7 +247,7 @@ export default function ContasReceber() {
             conta_bancaria_id: contaSelecionada.conta_bancaria_id,
             cartao_id: contaSelecionada.cartao_id,
             status_pagamento: 'pendente',
-            parent_conta_id: contaSelecionada.id,
+            parent_conta_id: contaSelecionada.parent_conta_id ?? contaSelecionada.id,
             observacao: `Saldo restante de pagamento parcial em ${recebimentoForm.data_pagamento}`
           });
 
