@@ -188,6 +188,7 @@ export default function ClassificacaoContabil() {
         onEdit={handleEdit}
         onDelete={handleDelete}
         loading={loading}
+        recurso="classificacao_contabil"
       />
 
       <Modal

@@ -193,6 +193,7 @@ export default function Lojas() {
         onEdit={handleEdit}
         onDelete={handleDelete}
         loading={loading}
+        recurso="lojas"
       />
 
       <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editing ? 'Editar Loja' : 'Nova Loja'}>

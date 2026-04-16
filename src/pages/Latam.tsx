@@ -461,6 +461,7 @@ export default function Latam() {
         onDelete={handleDelete}
         loading={loading}
         showTotals={true}
+        recurso="programas_fidelidade"
       />
 
       <Modal

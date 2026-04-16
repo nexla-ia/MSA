@@ -187,6 +187,7 @@ export default function ProgramasFidelidade() {
         onEdit={handleEdit}
         onDelete={handleDelete}
         loading={loading}
+        recurso="programas_fidelidade"
       />
 
       <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editing ? 'Editar Programa' : 'Novo Programa'}>

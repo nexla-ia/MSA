@@ -288,6 +288,7 @@ export default function Clientes() {
             <Landmark className="w-4 h-4" />
           </button>
         )}
+        recurso="clientes"
       />
 
       <Modal

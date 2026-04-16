@@ -192,6 +192,7 @@ export default function StatusPrograma() {
         onEdit={handleEdit}
         onDelete={handleDelete}
         loading={loading}
+        recurso="status_programa"
       />
 
       <Modal

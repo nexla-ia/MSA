@@ -164,6 +164,7 @@ export default function TiposCompra() {
             )
           }
         ]}
+        recurso="tipos_compra"
       />
 
       <Modal

@@ -167,6 +167,7 @@ export default function ContasBancarias() {
         onDelete={handleDelete}
         loading={loading}
         showTotals={true}
+        recurso="contas_bancarias"
       />
 
       <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editing ? 'Editar Banco Emissor' : 'Novo Banco Emissor'}>

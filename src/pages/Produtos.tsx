@@ -104,7 +104,7 @@ export default function Produtos() {
 
   return (
     <>
-      <CrudTable title="Produtos" data={produtos} columns={[{ key: 'nome', label: 'Nome do Produto' }, { key: 'valor_unitario', label: 'Valor Unitário', render: (item: Produto) => formatCurrency(item.valor_unitario) }]} onAdd={handleAdd} onEdit={handleEdit} onDelete={handleDelete} loading={loading} />
+      <CrudTable title="Produtos" data={produtos} columns={[{ key: 'nome', label: 'Nome do Produto' }, { key: 'valor_unitario', label: 'Valor Unitário', render: (item: Produto) => formatCurrency(item.valor_unitario) }]} onAdd={handleAdd} onEdit={handleEdit} onDelete={handleDelete} loading={loading} recurso="produtos" />
       <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editing ? 'Editar Produto' : 'Novo Produto'}>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>

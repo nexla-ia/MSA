@@ -361,6 +361,7 @@ export default function Perfis() {
         onEdit={handleEdit}
         onDelete={handleDelete}
         loading={loading}
+        recurso="perfis"
       />
 
       <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editing ? 'Editar Perfil' : 'Novo Perfil'}>

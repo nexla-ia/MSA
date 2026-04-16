@@ -466,6 +466,7 @@ export default function Usuarios() {
             )}
           </>
         )}
+        recurso="usuarios"
       />
 
       <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editing ? 'Editar Usuário' : 'Novo Usuário'}>

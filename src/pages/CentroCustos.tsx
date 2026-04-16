@@ -87,7 +87,7 @@ export default function CentroCustos() {
 
   return (
     <>
-      <CrudTable title="Centro de Custos" data={centros} columns={[{ key: 'chave_referencia', label: 'Chave Referência' }, { key: 'nome', label: 'Nome' }]} onAdd={handleAdd} onEdit={handleEdit} onDelete={handleDelete} loading={loading} />
+      <CrudTable title="Centro de Custos" data={centros} columns={[{ key: 'chave_referencia', label: 'Chave Referência' }, { key: 'nome', label: 'Nome' }]} onAdd={handleAdd} onEdit={handleEdit} onDelete={handleDelete} loading={loading} recurso="centro_custos" />
       <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editing ? 'Editar Centro de Custo' : 'Novo Centro de Custo'}>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>

@@ -227,6 +227,7 @@ export default function Programas() {
           onEdit={handleEdit}
           onDelete={handleDelete}
           loading={loading}
+          recurso="programas_fidelidade"
         />
 
         <Modal
