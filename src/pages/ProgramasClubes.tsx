@@ -481,6 +481,16 @@ export default function ProgramasClubes() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (!formData.parceiro_id || !formData.programa_id) {
+      setDialogConfig({
+        isOpen: true,
+        type: 'warning',
+        title: 'Campos Obrigatórios',
+        message: 'Por favor, preencha os campos obrigatórios:\n\nParceiro\nPrograma'
+      });
+      return;
+    }
+
     if (!formData.n_fidelidade || !formData.senha) {
       setDialogConfig({
         isOpen: true,
@@ -1020,7 +1030,7 @@ export default function ProgramasClubes() {
             </div>
 
             <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-slate-700 mb-1">Programa</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Programa <span className="text-red-500">*</span></label>
               <select
                 value={formData.programa_id || ''}
                 onChange={(e) => setFormData({ ...formData, programa_id: e.target.value })}
