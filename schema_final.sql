@@ -4004,7 +4004,7 @@ $function$
 ;
 
 CREATE OR REPLACE FUNCTION public.excluir_programa_clube(p_clube_id uuid)
- RETURNS void
+ RETURNS TABLE(pontos_revertidos numeric, pontos_ja_consumidos numeric)
  LANGUAGE plpgsql
  SECURITY DEFINER
  SET search_path TO 'public'
@@ -4013,6 +4013,8 @@ DECLARE
   v_clube RECORD;
   v_total_entradas numeric := 0;
   v_estoque RECORD;
+  v_revertidos numeric := 0;
+  v_consumidos numeric := 0;
   v_novo_saldo numeric;
   v_novo_valor numeric;
   v_novo_custo_medio numeric;
@@ -4029,14 +4031,18 @@ BEGIN
     AND referencia_tabela = 'programas_clubes'
     AND tipo = 'entrada';
 
-  -- Se havia entradas, reverte no saldo do parceiro/programa
   IF v_total_entradas > 0 AND v_clube.parceiro_id IS NOT NULL AND v_clube.programa_id IS NOT NULL THEN
     SELECT * INTO v_estoque
     FROM estoque_pontos
     WHERE parceiro_id = v_clube.parceiro_id AND programa_id = v_clube.programa_id;
 
     IF FOUND THEN
-      v_novo_saldo := GREATEST(0, v_estoque.saldo_atual - v_total_entradas);
+      -- Quanto pode ser revertido sem negativar o saldo
+      v_revertidos := LEAST(v_total_entradas, v_estoque.saldo_atual);
+      -- Quanto já foi consumido por vendas e não pode ser revertido
+      v_consumidos := GREATEST(0, v_total_entradas - v_estoque.saldo_atual);
+
+      v_novo_saldo := v_estoque.saldo_atual - v_revertidos;
 
       IF v_estoque.saldo_atual > 0 THEN
         v_novo_valor := v_estoque.valor_total * (v_novo_saldo::numeric / v_estoque.saldo_atual::numeric);
@@ -4060,7 +4066,6 @@ BEGIN
     END IF;
   END IF;
 
-  -- Remove movimentações, atividades e o registro
   DELETE FROM estoque_movimentacoes
   WHERE referencia_id = p_clube_id AND referencia_tabela = 'programas_clubes';
 
@@ -4068,6 +4073,8 @@ BEGIN
   WHERE referencia_id = p_clube_id AND referencia_tabela = 'programas_clubes';
 
   DELETE FROM programas_clubes WHERE id = p_clube_id;
+
+  RETURN QUERY SELECT v_revertidos, v_consumidos;
 END;
 $function$
 ;

@@ -730,7 +730,7 @@ export default function ProgramasClubes() {
       message: `Tem certeza que deseja excluir este registro?\n\nParceiro: ${parceiroNome}\nPrograma: ${programaNome}\n\nEsta ação irá remover o cadastro, todas as atividades relacionadas e reverter os pontos no estoque.`,
       onConfirm: async () => {
         try {
-          const { error } = await supabase.rpc('excluir_programa_clube', { p_clube_id: id });
+          const { data: rpcData, error } = await supabase.rpc('excluir_programa_clube', { p_clube_id: id });
 
           if (error) {
             console.error('Erro ao excluir:', error);
@@ -739,11 +739,26 @@ export default function ProgramasClubes() {
 
           await fetchData();
 
+          const resultado = rpcData?.[0];
+          const revertidos = resultado?.pontos_revertidos ?? 0;
+          const consumidos = resultado?.pontos_ja_consumidos ?? 0;
+
+          let mensagem = `Registro excluído com sucesso.\n\nParceiro: ${parceiroNome}\nPrograma: ${programaNome}`;
+          if (revertidos > 0) {
+            mensagem += `\n\n${revertidos.toLocaleString('pt-BR')} pontos revertidos no estoque.`;
+          }
+          if (consumidos > 0) {
+            mensagem += `\n${consumidos.toLocaleString('pt-BR')} pontos não puderam ser revertidos pois já foram utilizados em vendas.`;
+          }
+          if (revertidos === 0 && consumidos === 0) {
+            mensagem += '\n\nNenhum ponto havia sido creditado para este registro.';
+          }
+
           setDialogConfig({
             isOpen: true,
             type: 'success',
             title: 'Registro Excluído',
-            message: `O registro foi excluído com sucesso e os pontos foram revertidos no estoque.\n\nParceiro: ${parceiroNome}\nPrograma: ${programaNome}`
+            message: mensagem
           });
         } catch (error: any) {
           console.error('Erro ao excluir:', error);
