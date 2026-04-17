@@ -3896,7 +3896,9 @@ BEGIN
         'Crédito retroativo do clube ' || COALESCE(v_clube.produto_nome, '') ||
         ' referente a ' || TO_CHAR(v_data_credito, 'MM/YYYY'),
         v_clube.id,
-        'programas_clubes'
+        'programas_clubes',
+        NULL,           -- p_tipo_movimentacao
+        v_data_credito  -- p_data_operacao: usa a data real do mês, não a data de hoje
       );
 
       INSERT INTO atividades (
