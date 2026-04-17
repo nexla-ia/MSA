@@ -3836,6 +3836,9 @@ DECLARE
   v_data_credito date;
   v_meses_count int := 0;
   v_pontos_reg_total numeric := 0;
+  v_pontos_bonus_total numeric := 0;
+  v_bonus_date date;
+  v_intervalo interval;
 BEGIN
   SELECT
     pc.*,
@@ -3868,6 +3871,7 @@ BEGIN
     RETURN;
   END IF;
 
+  -- Créditos mensais regulares retroativos
   WHILE v_mes_inicio <= v_mes_atual LOOP
     v_data_credito := MAKE_DATE(
       EXTRACT(YEAR FROM v_mes_inicio)::int,
@@ -3885,39 +3889,27 @@ BEGIN
         AND EXTRACT(YEAR FROM data_prevista) = EXTRACT(YEAR FROM v_data_credito)
         AND status = 'concluido'
     ) THEN
-      -- FIX: passar COALESCE(v_clube.valor, 0) como p_valor_total (antes era 0 fixo)
       PERFORM atualizar_estoque_pontos(
         v_clube.parceiro_id,
         v_clube.programa_id,
         v_clube.quantidade_pontos,
         'Entrada',
-        COALESCE(v_clube.valor, 0),   -- valor real da mensalidade para custo médio correto
+        COALESCE(v_clube.valor, 0),
         'clube_credito_retroativo',
         'Crédito retroativo do clube ' || COALESCE(v_clube.produto_nome, '') ||
         ' referente a ' || TO_CHAR(v_data_credito, 'MM/YYYY'),
         v_clube.id,
         'programas_clubes',
-        NULL,           -- p_tipo_movimentacao
-        v_data_credito  -- p_data_operacao: usa a data real do mês, não a data de hoje
+        NULL,
+        v_data_credito
       );
 
       INSERT INTO atividades (
-        tipo_atividade,
-        titulo,
-        descricao,
-        parceiro_id,
-        parceiro_nome,
-        programa_id,
-        programa_nome,
-        quantidade_pontos,
-        data_prevista,
-        referencia_id,
-        referencia_tabela,
-        prioridade,
-        status
+        tipo_atividade, titulo, descricao,
+        parceiro_id, parceiro_nome, programa_id, programa_nome,
+        quantidade_pontos, data_prevista, referencia_id, referencia_tabela, prioridade, status
       ) VALUES (
-        'clube_credito_mensal',
-        'Crédito retroativo de clube',
+        'clube_credito_mensal', 'Crédito retroativo de clube',
         CASE
           WHEN NOT v_titular.eh_titular AND v_titular.conta_familia_id IS NOT NULL THEN
             'Crédito retroativo do clube ' || COALESCE(v_clube.produto_nome, '') ||
@@ -3927,16 +3919,10 @@ BEGIN
             'Crédito retroativo do clube ' || COALESCE(v_clube.produto_nome, '') ||
             ' referente a ' || TO_CHAR(v_data_credito, 'MM/YYYY')
         END,
-        v_clube.parceiro_id,
-        v_clube.nome_parceiro,
-        v_clube.programa_id,
-        v_clube.programa_nome,
-        v_clube.quantidade_pontos,
-        v_data_credito,
-        v_clube.id,
-        'programas_clubes',
-        'alta',
-        'concluido'
+        v_clube.parceiro_id, v_clube.nome_parceiro,
+        v_clube.programa_id, v_clube.programa_nome,
+        v_clube.quantidade_pontos, v_data_credito,
+        v_clube.id, 'programas_clubes', 'alta', 'concluido'
       );
 
       v_pontos_reg_total := v_pontos_reg_total + v_clube.quantidade_pontos;
@@ -3946,11 +3932,73 @@ BEGIN
     v_mes_inicio := (v_mes_inicio + INTERVAL '1 month')::date;
   END LOOP;
 
+  -- Bônus recorrente retroativo (mensal, trimestral ou anual)
+  IF v_clube.bonus_quantidade_pontos > 0 AND v_clube.sequencia IS NOT NULL THEN
+    v_intervalo := CASE v_clube.sequencia
+      WHEN 'mensal'     THEN INTERVAL '1 month'
+      WHEN 'trimestral' THEN INTERVAL '3 months'
+      WHEN 'anual'      THEN INTERVAL '1 year'
+      ELSE NULL
+    END;
+
+    IF v_intervalo IS NOT NULL THEN
+      v_bonus_date := v_clube.data_ultima_assinatura::date + v_intervalo;
+
+      WHILE v_bonus_date < CURRENT_DATE LOOP
+        IF NOT EXISTS (
+          SELECT 1 FROM atividades
+          WHERE parceiro_id = v_clube.parceiro_id
+            AND programa_id = v_clube.programa_id
+            AND tipo_atividade IN ('clube_credito_bonus', 'clube_credito_bonus_retroativo')
+            AND data_prevista = v_bonus_date
+            AND status = 'concluido'
+        ) THEN
+          PERFORM atualizar_estoque_pontos(
+            v_clube.parceiro_id,
+            v_clube.programa_id,
+            v_clube.bonus_quantidade_pontos,
+            'Entrada',
+            0,
+            'clube_credito_bonus_retroativo',
+            'Bônus retroativo (' || v_clube.sequencia || ') do clube ' ||
+            COALESCE(v_clube.produto_nome, '') ||
+            ' referente a ' || TO_CHAR(v_bonus_date, 'MM/YYYY'),
+            v_clube.id,
+            'programas_clubes',
+            NULL,
+            v_bonus_date
+          );
+
+          INSERT INTO atividades (
+            tipo_atividade, titulo, descricao,
+            parceiro_id, parceiro_nome, programa_id, programa_nome,
+            quantidade_pontos, data_prevista, referencia_id, referencia_tabela, prioridade, status
+          ) VALUES (
+            'clube_credito_bonus_retroativo',
+            'Bônus retroativo de clube',
+            'Bônus retroativo (' || v_clube.sequencia || ') do clube ' ||
+            COALESCE(v_clube.produto_nome, '') ||
+            ' referente a ' || TO_CHAR(v_bonus_date, 'MM/YYYY'),
+            v_clube.parceiro_id, v_clube.nome_parceiro,
+            v_clube.programa_id, v_clube.programa_nome,
+            v_clube.bonus_quantidade_pontos, v_bonus_date,
+            v_clube.id, 'programas_clubes', 'alta', 'concluido'
+          );
+
+          v_pontos_bonus_total := v_pontos_bonus_total + v_clube.bonus_quantidade_pontos;
+          v_meses_count := v_meses_count + 1;
+        END IF;
+
+        v_bonus_date := v_bonus_date + v_intervalo;
+      END LOOP;
+    END IF;
+  END IF;
+
   RETURN QUERY SELECT
     v_meses_count,
     v_pontos_reg_total,
-    0::numeric,
-    v_pontos_reg_total;
+    v_pontos_bonus_total,
+    v_pontos_reg_total + v_pontos_bonus_total;
 END;
 $function$
 ;
