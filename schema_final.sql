@@ -2355,14 +2355,12 @@ CREATE OR REPLACE FUNCTION public.deletar_atividades_clube()
  SECURITY DEFINER
 AS $function$
 BEGIN
--- Deletar TODAS as atividades pendentes relacionadas ao clube que está sendo deletado
+-- Deletar TODAS as atividades relacionadas ao clube que está sendo deletado
 DELETE FROM atividades
 WHERE referencia_tabela = 'programas_clubes'
-AND referencia_id = OLD.id
-AND status = 'pendente';
+AND referencia_id = OLD.id;
 
--- Log para debug (opcional)
-RAISE NOTICE 'Atividades pendentes do clube % foram removidas', OLD.id;
+RAISE NOTICE 'Atividades do clube % foram removidas', OLD.id;
 
 RETURN OLD;
 END;
@@ -3882,9 +3880,9 @@ BEGIN
     IF NOT EXISTS (
       SELECT 1
       FROM atividades
-      WHERE parceiro_id = v_clube.parceiro_id
-        AND programa_id = v_clube.programa_id
-        AND tipo_atividade = 'clube_credito_mensal'
+      WHERE referencia_id = v_clube.id
+        AND referencia_tabela = 'programas_clubes'
+        AND tipo_atividade IN ('clube_credito_mensal', 'clube_credito_retroativo')
         AND EXTRACT(MONTH FROM data_prevista) = EXTRACT(MONTH FROM v_data_credito)
         AND EXTRACT(YEAR FROM data_prevista) = EXTRACT(YEAR FROM v_data_credito)
         AND status = 'concluido'
@@ -3947,8 +3945,8 @@ BEGIN
       WHILE v_bonus_date < CURRENT_DATE LOOP
         IF NOT EXISTS (
           SELECT 1 FROM atividades
-          WHERE parceiro_id = v_clube.parceiro_id
-            AND programa_id = v_clube.programa_id
+          WHERE referencia_id = v_clube.id
+            AND referencia_tabela = 'programas_clubes'
             AND tipo_atividade IN ('clube_credito_bonus', 'clube_credito_bonus_retroativo')
             AND data_prevista = v_bonus_date
             AND status = 'concluido'
