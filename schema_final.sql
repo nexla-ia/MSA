@@ -4824,54 +4824,47 @@ DECLARE
   v_parceiro_nome text;
   v_programa_nome text;
 BEGIN
-  -- Só registra se houver forma de pagamento e não for "Não registrar no fluxo de caixa"
+  -- DELETE: remover parcelas pendentes
+  IF TG_OP = 'DELETE' THEN
+    DELETE FROM contas_a_pagar
+    WHERE origem_tipo = 'compra'
+      AND origem_id = OLD.id
+      AND status_pagamento = 'pendente';
+    RETURN OLD;
+  END IF;
+
+  -- UPDATE: remover parcelas pendentes antigas antes de recriar
+  IF TG_OP = 'UPDATE' THEN
+    DELETE FROM contas_a_pagar
+    WHERE origem_tipo = 'compra'
+      AND origem_id = NEW.id
+      AND status_pagamento = 'pendente';
+  END IF;
+
+  -- INSERT ou UPDATE: criar/recriar parcelas
   IF NEW.forma_pagamento IS NOT NULL
      AND NEW.forma_pagamento != 'Não registrar no fluxo de caixa'
      AND NEW.valor_total IS NOT NULL
      AND NEW.valor_total > 0 THEN
 
-    -- Buscar nomes para descrição
     SELECT nome_parceiro INTO v_parceiro_nome FROM parceiros WHERE id = NEW.parceiro_id;
     SELECT nome INTO v_programa_nome FROM programas_fidelidade WHERE id = NEW.programa_id;
 
-    -- Calcular valor por parcela
     v_valor_parcela := NEW.valor_total / COALESCE(NEW.quantidade_parcelas, 1);
 
-    -- Criar registro para cada parcela
     FOR v_parcela IN 1..COALESCE(NEW.quantidade_parcelas, 1) LOOP
-      -- Calcular data de vencimento usando helper
       v_data_vencimento := calcular_data_vencimento(NEW.forma_pagamento, NEW.cartao_id, NEW.data_vencimento_manual, NEW.data_entrada::date, v_parcela);
 
       INSERT INTO contas_a_pagar (
-        origem_tipo,
-        origem_id,
-        parceiro_id,
-        programa_id,
-        descricao,
-        data_vencimento,
-        valor_parcela,
-        numero_parcela,
-        total_parcelas,
-        forma_pagamento,
-        cartao_id,
-        conta_bancaria_id,
-        status_pagamento,
-        created_by
+        origem_tipo, origem_id, parceiro_id, programa_id, descricao,
+        data_vencimento, valor_parcela, numero_parcela, total_parcelas,
+        forma_pagamento, cartao_id, conta_bancaria_id, status_pagamento, created_by
       ) VALUES (
-        'compra',
-        NEW.id,
-        NEW.parceiro_id,
-        NEW.programa_id,
+        'compra', NEW.id, NEW.parceiro_id, NEW.programa_id,
         format('Compra de %s pontos/milhas - %s - %s', NEW.pontos_milhas, v_parceiro_nome, v_programa_nome),
-        v_data_vencimento,
-        v_valor_parcela,
-        v_parcela,
+        v_data_vencimento, v_valor_parcela, v_parcela,
         COALESCE(NEW.quantidade_parcelas, 1),
-        NEW.forma_pagamento,
-        NEW.cartao_id,
-        NEW.conta_bancaria_id,
-        'pendente',
-        NEW.created_by
+        NEW.forma_pagamento, NEW.cartao_id, NEW.conta_bancaria_id, 'pendente', NEW.created_by
       );
     END LOOP;
   END IF;
@@ -4893,52 +4886,44 @@ DECLARE
   v_parceiro_nome text;
   v_programa_nome text;
 BEGIN
-  -- Só registra se houver forma de pagamento e valor_produto (que representa o custo)
+  IF TG_OP = 'DELETE' THEN
+    DELETE FROM contas_a_pagar
+    WHERE origem_tipo = 'compra_bonificada'
+      AND origem_id = OLD.id
+      AND status_pagamento = 'pendente';
+    RETURN OLD;
+  END IF;
+
+  IF TG_OP = 'UPDATE' THEN
+    DELETE FROM contas_a_pagar
+    WHERE origem_tipo = 'compra_bonificada'
+      AND origem_id = NEW.id
+      AND status_pagamento = 'pendente';
+  END IF;
+
   IF NEW.forma_pagamento IS NOT NULL
      AND NEW.forma_pagamento != 'Não registrar no fluxo de caixa'
      AND NEW.valor_produto IS NOT NULL
      AND NEW.valor_produto != 0 THEN
 
-    -- Buscar nomes para descrição (usa parceiros)
     SELECT nome_parceiro INTO v_parceiro_nome FROM parceiros WHERE id = NEW.parceiro_id;
     SELECT nome INTO v_programa_nome FROM programas_fidelidade WHERE id = NEW.programa_id;
 
-    -- Calcular valor por parcela (valor_produto pode ser negativo, então usamos ABS)
     v_valor_parcela := ABS(NEW.valor_produto) / COALESCE(NEW.parcelas, 1);
 
-    -- Criar registro para cada parcela
     FOR v_parcela IN 1..COALESCE(NEW.parcelas, 1) LOOP
-      -- Calcular data de vencimento usando helper
       v_data_vencimento := calcular_data_vencimento(NEW.forma_pagamento, NEW.cartao_id, NEW.data_vencimento_manual, NEW.data_compra::date, v_parcela);
 
       INSERT INTO contas_a_pagar (
-        origem_tipo,
-        origem_id,
-        parceiro_id,
-        programa_id,
-        descricao,
-        data_vencimento,
-        valor_parcela,
-        numero_parcela,
-        total_parcelas,
-        forma_pagamento,
-        cartao_id,
-        conta_bancaria_id,
-        status_pagamento
+        origem_tipo, origem_id, parceiro_id, programa_id, descricao,
+        data_vencimento, valor_parcela, numero_parcela, total_parcelas,
+        forma_pagamento, cartao_id, conta_bancaria_id, status_pagamento
       ) VALUES (
-        'compra_bonificada',
-        NEW.id,
-        NEW.parceiro_id,
-        NEW.programa_id,
+        'compra_bonificada', NEW.id, NEW.parceiro_id, NEW.programa_id,
         format('Compra bonificada - %s - %s - Loja: %s', v_parceiro_nome, v_programa_nome, NEW.loja),
-        v_data_vencimento,
-        v_valor_parcela,
-        v_parcela,
+        v_data_vencimento, v_valor_parcela, v_parcela,
         COALESCE(NEW.parcelas, 1),
-        NEW.forma_pagamento,
-        NEW.cartao_id,
-        NEW.conta_bancaria_id,
-        'pendente'
+        NEW.forma_pagamento, NEW.cartao_id, NEW.conta_bancaria_id, 'pendente'
       );
     END LOOP;
   END IF;
@@ -6207,7 +6192,7 @@ CREATE TRIGGER trigger_atualizar_estoque_compra_bonificada_update
 
 DROP TRIGGER IF EXISTS trigger_registrar_conta_pagar_compra_bonificada ON public.compra_bonificada;
 CREATE TRIGGER trigger_registrar_conta_pagar_compra_bonificada
-  AFTER INSERT ON public.compra_bonificada
+  AFTER INSERT OR UPDATE OR DELETE ON public.compra_bonificada
   FOR EACH ROW
   EXECUTE FUNCTION registrar_conta_pagar_compra_bonificada();
 
@@ -6231,7 +6216,7 @@ CREATE TRIGGER trigger_compras_before_saldo
 
 DROP TRIGGER IF EXISTS trigger_registrar_conta_pagar_compra ON public.compras;
 CREATE TRIGGER trigger_registrar_conta_pagar_compra
-  AFTER INSERT ON public.compras
+  AFTER INSERT OR UPDATE OR DELETE ON public.compras
   FOR EACH ROW
   EXECUTE FUNCTION registrar_conta_pagar_compra();
 
