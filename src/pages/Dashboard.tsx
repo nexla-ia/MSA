@@ -134,7 +134,7 @@ export default function Dashboard() {
       const nome = (row.programas_fidelidade as any)?.nome || 'Desconhecido';
       if (!map[id]) map[id] = { programa_id: id, programa_nome: nome, total_pontos: 0, valor_total: 0 };
       map[id].total_pontos += Number(row.saldo_atual);
-      map[id].valor_total += Number(row.saldo_atual) * Number(row.custo_medio || 0);
+      map[id].valor_total += Number(row.saldo_atual) * Number(row.custo_medio || 0) / 1000;
     }
 
     setEstoque(Object.values(map).sort((a, b) => b.total_pontos - a.total_pontos));
