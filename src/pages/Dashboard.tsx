@@ -8,7 +8,7 @@ import {
 import { Bar, Doughnut } from 'react-chartjs-2';
 import {
   Users, Award, Bell, Calendar, AlertCircle, CheckCircle2,
-  TrendingUp, DollarSign, ShoppingCart, AlertTriangle, Clock,
+  TrendingUp, DollarSign, ShoppingCart,
   Package, CreditCard, ArrowDownCircle, ArrowUpCircle,
 } from 'lucide-react';
 
@@ -76,13 +76,6 @@ type MesTrend = { mes: string; receita: number; custo: number };
 type ProgramaPie = { nome: string; total: number };
 type FluxoDia = { dia: string; entradas: number; saidas: number };
 
-type DrillItem = Record<string, any>;
-type DrillConfig = {
-  title: string;
-  cols: { key: string; label: string; fmt?: (v: any) => string; className?: string }[];
-  load: () => Promise<DrillItem[]>;
-} | null;
-
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 const fmtBRL = (v: number) =>
   v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -135,9 +128,6 @@ export default function Dashboard() {
   const [porPrograma, setPorPrograma] = useState<ProgramaPie[]>([]);
   const [fluxo30, setFluxo30] = useState<FluxoDia[]>([]);
   const [loading, setLoading] = useState(true);
-  const [drill, setDrill] = useState<DrillConfig>(null);
-  const [drillData, setDrillData] = useState<DrillItem[]>([]);
-  const [drillLoading, setDrillLoading] = useState(false);
 
   const loadKPI = useCallback(async () => {
     const hoje = new Date().toISOString().split('T')[0];
@@ -175,7 +165,6 @@ export default function Dashboard() {
     const custo = sum(compras as any[] || [], 'valor_total') + sum(comprasBon as any[] || [], 'custo_total');
     const qtdVendas = (vendas || []).length;
     const milheiroSum = (vendas || []).reduce((s, v: any) => s + (Number(v.valor_milheiro) || 0), 0);
-
     const estoqueValor = (estoqueData || []).reduce((s: number, r: any) =>
       s + Number(r.saldo_atual) * Number(r.custo_medio || 0) / 1000, 0);
 
@@ -248,32 +237,22 @@ export default function Dashboard() {
     const [{ data: receber }, { data: pagar }] = await Promise.all([
       supabase.from('contas_a_receber')
         .select('id, data_vencimento, valor_parcela, status_pagamento, parceiros(nome)')
-        .gte('data_vencimento', hoje)
-        .lte('data_vencimento', em30)
-        .neq('status_pagamento', 'pago')
-        .order('data_vencimento')
-        .limit(6),
+        .gte('data_vencimento', hoje).lte('data_vencimento', em30)
+        .neq('status_pagamento', 'pago').order('data_vencimento').limit(6),
       supabase.from('contas_a_pagar')
         .select('id, data_vencimento, valor_parcela, status_pagamento, descricao')
-        .gte('data_vencimento', hoje)
-        .lte('data_vencimento', em30)
-        .neq('status_pagamento', 'pago')
-        .order('data_vencimento')
-        .limit(6),
+        .gte('data_vencimento', hoje).lte('data_vencimento', em30)
+        .neq('status_pagamento', 'pago').order('data_vencimento').limit(6),
     ]);
 
     setProximosRecebimentos((receber || []).map((r: any) => ({
-      id: r.id,
-      nome: r.parceiros?.nome || '—',
-      data_vencimento: r.data_vencimento,
-      valor_parcela: r.valor_parcela,
+      id: r.id, nome: r.parceiros?.nome || '—',
+      data_vencimento: r.data_vencimento, valor_parcela: r.valor_parcela,
       status_pagamento: r.status_pagamento,
     })));
     setProximosPagamentos((pagar || []).map((r: any) => ({
-      id: r.id,
-      nome: r.descricao || '—',
-      data_vencimento: r.data_vencimento,
-      valor_parcela: r.valor_parcela,
+      id: r.id, nome: r.descricao || '—',
+      data_vencimento: r.data_vencimento, valor_parcela: r.valor_parcela,
       status_pagamento: r.status_pagamento,
     })));
   }, []);
@@ -284,8 +263,7 @@ export default function Dashboard() {
     for (let i = 5; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const inicio = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
-      const fim = new Date(d.getFullYear(), d.getMonth() + 1, 0);
-      const fimStr = fim.toISOString().split('T')[0];
+      const fimStr = new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().split('T')[0];
       const label = MES_SHORT[d.getMonth()];
       const [{ data: v }, { data: c }, { data: cb }] = await Promise.all([
         supabase.from('vendas').select('valor_total').gte('data_venda', inicio).lte('data_venda', fimStr).neq('status', 'cancelada'),
@@ -305,19 +283,15 @@ export default function Dashboard() {
     const d = new Date();
     const inicio = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
     const { data } = await supabase
-      .from('vendas')
-      .select('valor_total, programas_fidelidade(nome)')
-      .gte('data_venda', inicio)
-      .neq('status', 'cancelada');
+      .from('vendas').select('valor_total, programas_fidelidade(nome)')
+      .gte('data_venda', inicio).neq('status', 'cancelada');
     if (!data) return;
     const map: Record<string, number> = {};
     for (const row of data as any[]) {
       const nome = row.programas_fidelidade?.nome || 'Outros';
       map[nome] = (map[nome] || 0) + Number(row.valor_total || 0);
     }
-    const sorted = Object.entries(map)
-      .map(([nome, total]) => ({ nome, total }))
-      .sort((a, b) => b.total - a.total);
+    const sorted = Object.entries(map).map(([nome, total]) => ({ nome, total })).sort((a, b) => b.total - a.total);
     const top4 = sorted.slice(0, 4);
     const outros = sorted.slice(4).reduce((s, x) => s + x.total, 0);
     if (outros > 0) top4.push({ nome: 'Outros', total: outros });
@@ -332,11 +306,11 @@ export default function Dashboard() {
       d.setDate(d.getDate() + i);
       dias.push({ dia: d.toISOString().split('T')[0], entradas: 0, saidas: 0 });
     }
-    const inicio = dias[0].dia;
-    const fim = dias[29].dia;
     const [{ data: receber }, { data: pagar }] = await Promise.all([
-      supabase.from('contas_a_receber').select('data_vencimento, valor_parcela').gte('data_vencimento', inicio).lte('data_vencimento', fim).neq('status_pagamento', 'pago'),
-      supabase.from('contas_a_pagar').select('data_vencimento, valor_parcela').gte('data_vencimento', inicio).lte('data_vencimento', fim).neq('status_pagamento', 'pago'),
+      supabase.from('contas_a_receber').select('data_vencimento, valor_parcela')
+        .gte('data_vencimento', dias[0].dia).lte('data_vencimento', dias[29].dia).neq('status_pagamento', 'pago'),
+      supabase.from('contas_a_pagar').select('data_vencimento, valor_parcela')
+        .gte('data_vencimento', dias[0].dia).lte('data_vencimento', dias[29].dia).neq('status_pagamento', 'pago'),
     ]);
     const diaMap: Record<string, FluxoDia> = {};
     for (const d of dias) diaMap[d.dia] = d;
@@ -356,136 +330,6 @@ export default function Dashboard() {
     ]).finally(() => setLoading(false));
   }, []);
 
-  const openDrill = useCallback(async (config: DrillConfig) => {
-    if (!config) return;
-    setDrill(config);
-    setDrillData([]);
-    setDrillLoading(true);
-    const data = await config.load();
-    setDrillData(data);
-    setDrillLoading(false);
-  }, []);
-
-  const drillConfigs = useCallback((): Record<string, DrillConfig> => {
-    const hoje = new Date().toISOString().split('T')[0];
-    const d = new Date();
-    const inicioMes = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
-    const em7dias = new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0];
-
-    return {
-      receita: {
-        title: 'Receita Bruta — Vendas do Mês',
-        cols: [
-          { key: 'parceiro_nome', label: 'Parceiro' },
-          { key: 'programa_nome', label: 'Programa' },
-          { key: 'data_venda', label: 'Data', fmt: (v) => fmtDate(v) },
-          { key: 'valor_total', label: 'Valor', fmt: fmtBRL, className: 'text-right font-semibold text-blue-700' },
-          { key: 'status', label: 'Status' },
-        ],
-        load: async () => {
-          const { data } = await supabase.from('vendas')
-            .select('parceiro_nome, programa_nome, data_venda, valor_total, status')
-            .gte('data_venda', inicioMes).neq('status', 'cancelada')
-            .order('data_venda', { ascending: false });
-          return data || [];
-        },
-      },
-      custo: {
-        title: 'Custo de Aquisição — Compras do Mês',
-        cols: [
-          { key: 'descricao', label: 'Descrição' },
-          { key: 'data', label: 'Data', fmt: (v) => fmtDate(v) },
-          { key: 'valor_total', label: 'Valor', fmt: fmtBRL, className: 'text-right font-semibold text-red-600' },
-          { key: 'tipo', label: 'Tipo' },
-        ],
-        load: async () => {
-          const [{ data: c }, { data: cb }] = await Promise.all([
-            supabase.from('compras').select('descricao, data_entrada, valor_total').gte('data_entrada', inicioMes).order('data_entrada', { ascending: false }),
-            supabase.from('compra_bonificada').select('descricao, data_compra, custo_total').gte('data_compra', inicioMes).order('data_compra', { ascending: false }),
-          ]);
-          return [
-            ...(c || []).map((r: any) => ({ descricao: r.descricao || '—', data: r.data_entrada, valor_total: r.valor_total, tipo: 'Compra' })),
-            ...(cb || []).map((r: any) => ({ descricao: r.descricao || '—', data: r.data_compra, valor_total: r.custo_total, tipo: 'Bonificada' })),
-          ].sort((a, b) => b.data?.localeCompare(a.data));
-        },
-      },
-      aReceber7d: {
-        title: 'A Receber — Vencendo em 7 dias',
-        cols: [
-          { key: 'parceiro', label: 'Parceiro/Cliente' },
-          { key: 'data_vencimento', label: 'Vencimento', fmt: (v) => fmtDate(v) },
-          { key: 'valor_parcela', label: 'Valor', fmt: fmtBRL, className: 'text-right font-semibold text-emerald-700' },
-          { key: 'status_pagamento', label: 'Status' },
-        ],
-        load: async () => {
-          const { data } = await supabase.from('contas_a_receber')
-            .select('data_vencimento, valor_parcela, status_pagamento, parceiros(nome)')
-            .gt('data_vencimento', hoje).lte('data_vencimento', em7dias)
-            .neq('status_pagamento', 'pago').order('data_vencimento');
-          return (data || []).map((r: any) => ({ ...r, parceiro: r.parceiros?.nome || '—' }));
-        },
-      },
-      aPagar7d: {
-        title: 'A Pagar — Vencendo em 7 dias',
-        cols: [
-          { key: 'descricao', label: 'Descrição' },
-          { key: 'data_vencimento', label: 'Vencimento', fmt: (v) => fmtDate(v) },
-          { key: 'valor_parcela', label: 'Valor', fmt: fmtBRL, className: 'text-right font-semibold text-orange-600' },
-          { key: 'status_pagamento', label: 'Status' },
-        ],
-        load: async () => {
-          const { data } = await supabase.from('contas_a_pagar')
-            .select('descricao, data_vencimento, valor_parcela, status_pagamento')
-            .gt('data_vencimento', hoje).lte('data_vencimento', em7dias)
-            .neq('status_pagamento', 'pago').order('data_vencimento');
-          return (data || []).map((r: any) => ({ ...r, descricao: r.descricao || '—' }));
-        },
-      },
-      aPagarVencido: {
-        title: 'Contas a Pagar — Vencidas',
-        cols: [
-          { key: 'descricao', label: 'Descrição' },
-          { key: 'data_vencimento', label: 'Vencimento', fmt: (v) => fmtDate(v), className: 'text-red-600' },
-          { key: 'valor_parcela', label: 'Valor', fmt: fmtBRL, className: 'text-right font-semibold text-red-600' },
-          { key: 'status_pagamento', label: 'Status' },
-        ],
-        load: async () => {
-          const { data } = await supabase.from('contas_a_pagar')
-            .select('descricao, data_vencimento, valor_parcela, status_pagamento')
-            .lt('data_vencimento', hoje).eq('status_pagamento', 'pendente')
-            .order('data_vencimento');
-          return (data || []).map((r: any) => ({ ...r, descricao: r.descricao || '—' }));
-        },
-      },
-      estoque: {
-        title: 'Estoque de Milhas por Programa',
-        cols: [
-          { key: 'programa_nome', label: 'Programa' },
-          { key: 'total_pontos', label: 'Pontos', fmt: (v) => fmtPts(v), className: 'text-right' },
-          { key: 'valor_total', label: 'Valor (R$)', fmt: fmtBRL, className: 'text-right font-semibold text-purple-700' },
-        ],
-        load: async () => estoque,
-      },
-      vendaTicket: {
-        title: 'Vendas do Mês — Ticket e Milheiro',
-        cols: [
-          { key: 'parceiro_nome', label: 'Parceiro' },
-          { key: 'programa_nome', label: 'Programa' },
-          { key: 'data_venda', label: 'Data', fmt: (v) => fmtDate(v) },
-          { key: 'valor_total', label: 'Ticket', fmt: fmtBRL, className: 'text-right' },
-          { key: 'valor_milheiro', label: 'Milheiro', fmt: fmtBRL, className: 'text-right font-semibold text-cyan-700' },
-        ],
-        load: async () => {
-          const { data } = await supabase.from('vendas')
-            .select('parceiro_nome, programa_nome, data_venda, valor_total, valor_milheiro')
-            .gte('data_venda', inicioMes).neq('status', 'cancelada')
-            .order('valor_milheiro', { ascending: false });
-          return data || [];
-        },
-      },
-    };
-  }, [estoque]);
-
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -496,11 +340,9 @@ export default function Dashboard() {
 
   const saldoFinal = kpi.totalEntradasMes - kpi.totalSaidasMes;
   const totalEstoque = estoque.reduce((s, e) => s + e.total_pontos, 0);
-
-  // A/R status breakdown
   const arEmDia = kpi.aReceberTotal - kpi.aReceberVencendo7d;
   const arTotal = kpi.aReceberTotal || 1;
-  const arVencidoPct = Math.round((kpi.receberVencidasCount > 0 ? (kpi.receberVencidasCount / arTotal) * 100 : 0));
+  const arVencidoPct = Math.round(kpi.receberVencidasCount > 0 ? (kpi.receberVencidasCount / arTotal) * 100 : 0);
   const ar7dPct = Math.round((kpi.aReceberVencendo7d / arTotal) * 100);
   const arEmDiaPct = Math.max(0, 100 - arVencidoPct - ar7dPct);
 
@@ -517,20 +359,15 @@ export default function Dashboard() {
       {/* Alert Banners */}
       <div className="space-y-2">
         {kpi.contasVencidasCount > 0 && (
-          <button
-            onClick={() => openDrill(drillConfigs().aPagarVencido)}
-            className="w-full text-left flex items-center gap-4 bg-red-50 border border-red-200 rounded-xl px-5 py-3 border-l-4 border-l-red-500 hover:bg-red-100 transition-colors"
-          >
+          <div className="flex items-center gap-4 bg-red-50 border border-red-200 rounded-xl px-5 py-3 border-l-4 border-l-red-500">
             <div className="w-2.5 h-2.5 rounded-full bg-red-500 flex-shrink-0" />
             <div className="flex-1 min-w-0">
               <span className="font-semibold text-red-800 text-sm">
                 {kpi.contasVencidasCount} Conta{kpi.contasVencidasCount !== 1 ? 's' : ''} a Pagar Vencida{kpi.contasVencidasCount !== 1 ? 's' : ''}
               </span>
-              <span className="text-red-600 text-xs ml-2">
-                Total de {fmtBRL(kpi.contasVencidasValor)} em atraso — clique para ver
-              </span>
+              <span className="text-red-600 text-xs ml-2">Total de {fmtBRL(kpi.contasVencidasValor)} em atraso</span>
             </div>
-          </button>
+          </div>
         )}
         {kpi.receberVencidasCount > 0 && (
           <div className="flex items-center gap-4 bg-amber-50 border border-amber-200 rounded-xl px-5 py-3 border-l-4 border-l-amber-500">
@@ -556,74 +393,18 @@ export default function Dashboard() {
 
       {/* KPI Cards — 4+4 */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <KpiCard
-          title="Receita Bruta (Mês)"
-          value={fmtBRL(kpi.receitaBruta)}
-          sub="Fonte: vendas"
-          icon={TrendingUp}
-          accent="blue"
-          onClick={() => openDrill(drillConfigs().receita)}
-        />
-        <KpiCard
-          title="Custo de Aquisição"
-          value={fmtBRL(kpi.custoAquisicao)}
-          sub="compras + bonificadas"
-          icon={ShoppingCart}
-          accent="red"
-          onClick={() => openDrill(drillConfigs().custo)}
-        />
-        <KpiCard
-          title="Margem Bruta"
-          value={`${kpi.margemBruta.toFixed(1)}%`}
-          sub="(Receita − Custo) / Receita"
-          icon={Award}
-          accent={kpi.margemBruta >= 0 ? 'green' : 'red'}
-        />
-        <KpiCard
-          title="A Receber (7 dias)"
-          value={fmtBRL(kpi.aReceberVencendo7d)}
-          sub={`${kpi.aReceberVencendo7dCount} parcelas`}
-          icon={ArrowDownCircle}
-          accent="emerald"
-          onClick={() => openDrill(drillConfigs().aReceber7d)}
-        />
-        <KpiCard
-          title="A Pagar (7 dias)"
-          value={fmtBRL(kpi.aPagarVencendo7d)}
-          sub={`${kpi.aPagarVencendo7dCount} parcelas`}
-          icon={ArrowUpCircle}
-          accent="orange"
-          onClick={() => openDrill(drillConfigs().aPagar7d)}
-        />
-        <KpiCard
-          title="Estoque de Milhas"
-          value={fmtBRL(kpi.estoqueMilhasValor)}
-          sub={`${fmtPts(totalEstoque)} pts — custo médio`}
-          icon={Package}
-          accent="purple"
-          onClick={() => openDrill(drillConfigs().estoque)}
-        />
-        <KpiCard
-          title="Ticket Médio Venda"
-          value={fmtBRL(kpi.ticketMedio)}
-          sub="valor_total / qtd vendas"
-          icon={DollarSign}
-          accent="indigo"
-          onClick={() => openDrill(drillConfigs().vendaTicket)}
-        />
-        <KpiCard
-          title="Valor Milheiro Médio"
-          value={fmtBRL(kpi.valorMilheiroMedio)}
-          sub="média vendas do mês"
-          icon={CreditCard}
-          accent="cyan"
-          onClick={() => openDrill(drillConfigs().vendaTicket)}
-        />
+        <KpiCard title="Receita Bruta (Mês)" value={fmtBRL(kpi.receitaBruta)} sub="Fonte: vendas" icon={TrendingUp} accent="blue" />
+        <KpiCard title="Custo de Aquisição" value={fmtBRL(kpi.custoAquisicao)} sub="compras + bonificadas" icon={ShoppingCart} accent="red" />
+        <KpiCard title="Margem Bruta" value={`${kpi.margemBruta.toFixed(1)}%`} sub="(Receita − Custo) / Receita" icon={Award} accent={kpi.margemBruta >= 0 ? 'green' : 'red'} />
+        <KpiCard title="A Receber (7 dias)" value={fmtBRL(kpi.aReceberVencendo7d)} sub={`${kpi.aReceberVencendo7dCount} parcelas`} icon={ArrowDownCircle} accent="emerald" />
+        <KpiCard title="A Pagar (7 dias)" value={fmtBRL(kpi.aPagarVencendo7d)} sub={`${kpi.aPagarVencendo7dCount} parcelas`} icon={ArrowUpCircle} accent="orange" />
+        <KpiCard title="Estoque de Milhas" value={fmtBRL(kpi.estoqueMilhasValor)} sub={`${fmtPts(totalEstoque)} pts — custo médio`} icon={Package} accent="purple" />
+        <KpiCard title="Ticket Médio Venda" value={fmtBRL(kpi.ticketMedio)} sub="valor_total / qtd vendas" icon={DollarSign} accent="indigo" />
+        <KpiCard title="Valor Milheiro Médio" value={fmtBRL(kpi.valorMilheiroMedio)} sub="média vendas do mês" icon={CreditCard} accent="cyan" />
       </div>
 
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Receita vs Custo */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
           <h3 className="font-semibold text-slate-800 mb-1">Receita vs Custo — Últimos 6 Meses</h3>
           <p className="text-xs text-slate-400 mb-4">Evolução financeira mensal</p>
@@ -635,15 +416,10 @@ export default function Dashboard() {
                 { label: 'Custo', data: tendencia.map(t => t.custo), backgroundColor: '#ef4444', borderRadius: 4 },
               ],
             }}
-            options={{
-              responsive: true,
-              plugins: { legend: { position: 'bottom' } },
-              scales: { y: { ticks: { callback: (v) => `R$${Number(v)/1000}k` } } },
-            }}
+            options={{ responsive: true, plugins: { legend: { position: 'bottom' } }, scales: { y: { ticks: { callback: (v) => `R$${Number(v)/1000}k` } } } }}
           />
         </div>
 
-        {/* Receita por Programa */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
           <h3 className="font-semibold text-slate-800 mb-1">Receita por Programa</h3>
           <p className="text-xs text-slate-400 mb-4">Distribuição do mês atual</p>
@@ -655,12 +431,7 @@ export default function Dashboard() {
                 <Doughnut
                   data={{
                     labels: porPrograma.map(p => p.nome),
-                    datasets: [{
-                      data: porPrograma.map(p => p.total),
-                      backgroundColor: PIE_COLORS,
-                      borderWidth: 2,
-                      borderColor: '#fff',
-                    }],
+                    datasets: [{ data: porPrograma.map(p => p.total), backgroundColor: PIE_COLORS, borderWidth: 2, borderColor: '#fff' }],
                   }}
                   options={{ plugins: { legend: { display: false } }, cutout: '65%' }}
                 />
@@ -682,7 +453,6 @@ export default function Dashboard() {
           )}
         </div>
 
-        {/* Fluxo de Caixa 30 dias */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
           <h3 className="font-semibold text-slate-800 mb-1">Fluxo de Caixa — 30 Dias</h3>
           <p className="text-xs text-slate-400 mb-4">Entradas e saídas projetadas por vencimento</p>
@@ -690,29 +460,14 @@ export default function Dashboard() {
             data={{
               labels: fluxo30.map((d, i) => i % 5 === 0 ? d.dia.split('-')[2] : ''),
               datasets: [
-                {
-                  label: 'Entradas',
-                  data: fluxo30.map(d => d.entradas),
-                  backgroundColor: 'rgba(16,185,129,0.6)',
-                  borderRadius: 2,
-                },
-                {
-                  label: 'Saídas',
-                  data: fluxo30.map(d => d.saidas),
-                  backgroundColor: 'rgba(239,68,68,0.6)',
-                  borderRadius: 2,
-                },
+                { label: 'Entradas', data: fluxo30.map(d => d.entradas), backgroundColor: 'rgba(16,185,129,0.6)', borderRadius: 2 },
+                { label: 'Saídas', data: fluxo30.map(d => d.saidas), backgroundColor: 'rgba(239,68,68,0.6)', borderRadius: 2 },
               ],
             }}
-            options={{
-              responsive: true,
-              plugins: { legend: { position: 'bottom' } },
-              scales: { y: { ticks: { callback: (v) => `R$${Number(v)/1000}k` } } },
-            }}
+            options={{ responsive: true, plugins: { legend: { position: 'bottom' } }, scales: { y: { ticks: { callback: (v) => `R$${Number(v)/1000}k` } } } }}
           />
         </div>
 
-        {/* Status A/R */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
           <h3 className="font-semibold text-slate-800 mb-1">Status A/R</h3>
           <p className="text-xs text-slate-400 mb-6">Contas a receber por situação</p>
@@ -732,20 +487,8 @@ export default function Dashboard() {
 
       {/* Próximos Recebimentos + Pagamentos */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <ProximosTable
-          title="Próximos Recebimentos"
-          icon={<ArrowDownCircle className="w-4 h-4 text-green-600" />}
-          items={proximosRecebimentos}
-          colLabel="Parceiro/Cliente"
-          colorScheme="green"
-        />
-        <ProximosTable
-          title="Próximos Pagamentos"
-          icon={<ArrowUpCircle className="w-4 h-4 text-red-500" />}
-          items={proximosPagamentos}
-          colLabel="Fornecedor/Descrição"
-          colorScheme="red"
-        />
+        <ProximosTable title="Próximos Recebimentos" icon={<ArrowDownCircle className="w-4 h-4 text-green-600" />} items={proximosRecebimentos} colLabel="Parceiro/Cliente" />
+        <ProximosTable title="Próximos Pagamentos" icon={<ArrowUpCircle className="w-4 h-4 text-red-500" />} items={proximosPagamentos} colLabel="Fornecedor/Descrição" />
       </div>
 
       {/* Resumo do Mês */}
@@ -781,9 +524,7 @@ export default function Dashboard() {
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
           <div className="flex items-center gap-3 mb-5">
-            <div className="bg-amber-50 p-2 rounded-lg">
-              <Bell className="w-5 h-5 text-amber-500" />
-            </div>
+            <div className="bg-amber-50 p-2 rounded-lg"><Bell className="w-5 h-5 text-amber-500" /></div>
             <div>
               <h3 className="font-bold text-slate-800">Atividades Pendentes</h3>
               <p className="text-xs text-slate-500">Entradas de pontos desta semana</p>
@@ -808,22 +549,14 @@ export default function Dashboard() {
                         </span>
                       </div>
                       <div className="flex flex-wrap gap-2 text-xs text-slate-500">
-                        {a.parceiro_nome && (
-                          <span className="flex items-center gap-1">
-                            <Users className="w-3 h-3" />{a.parceiro_nome}
-                          </span>
-                        )}
-                        {a.quantidade_pontos > 0 && (
-                          <span className="text-green-600 font-semibold">+{fmtPts(a.quantidade_pontos)} pts</span>
-                        )}
+                        {a.parceiro_nome && <span className="flex items-center gap-1"><Users className="w-3 h-3" />{a.parceiro_nome}</span>}
+                        {a.quantidade_pontos > 0 && <span className="text-green-600 font-semibold">+{fmtPts(a.quantidade_pontos)} pts</span>}
                       </div>
                     </div>
                     <div className="text-right flex-shrink-0">
                       <div className="flex items-center gap-1 text-xs text-slate-500 mb-0.5">
                         <Calendar className="w-3 h-3" />
-                        {a.data_prevista
-                          ? new Date(a.data_prevista + 'T00:00:00').toLocaleDateString('pt-BR')
-                          : '-'}
+                        {a.data_prevista ? new Date(a.data_prevista + 'T00:00:00').toLocaleDateString('pt-BR') : '-'}
                       </div>
                       <span className="text-xs text-slate-400">{a.periodo}{a.dias_restantes > 0 ? ` (${a.dias_restantes}d)` : ''}</span>
                     </div>
@@ -836,9 +569,7 @@ export default function Dashboard() {
 
         <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl border border-green-200 shadow-sm p-6">
           <div className="flex items-center gap-3 mb-5">
-            <div className="bg-green-100 p-2 rounded-lg">
-              <CheckCircle2 className="w-5 h-5 text-green-600" />
-            </div>
+            <div className="bg-green-100 p-2 rounded-lg"><CheckCircle2 className="w-5 h-5 text-green-600" /></div>
             <div>
               <h3 className="font-bold text-slate-800">Pontos Creditados Hoje</h3>
               <p className="text-xs text-slate-500">Entradas processadas hoje</p>
@@ -861,14 +592,8 @@ export default function Dashboard() {
                         <span className="px-1.5 py-0.5 rounded-full text-xs bg-green-100 text-green-700 flex-shrink-0">Creditado</span>
                       </div>
                       <div className="flex flex-wrap gap-2 text-xs text-slate-500">
-                        {a.parceiro_nome && (
-                          <span className="flex items-center gap-1">
-                            <Users className="w-3 h-3" />{a.parceiro_nome}
-                          </span>
-                        )}
-                        {a.quantidade_pontos > 0 && (
-                          <span className="text-green-600 font-semibold">+{fmtPts(a.quantidade_pontos)} pts</span>
-                        )}
+                        {a.parceiro_nome && <span className="flex items-center gap-1"><Users className="w-3 h-3" />{a.parceiro_nome}</span>}
+                        {a.quantidade_pontos > 0 && <span className="text-green-600 font-semibold">+{fmtPts(a.quantidade_pontos)} pts</span>}
                       </div>
                     </div>
                     <span className="text-xs text-slate-400 flex-shrink-0">
@@ -881,53 +606,6 @@ export default function Dashboard() {
           )}
         </div>
       </section>
-
-      {/* Drill-down Modal */}
-      {drill && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={() => setDrill(null)}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
-              <h2 className="font-bold text-slate-800 text-lg">{drill.title}</h2>
-              <button onClick={() => setDrill(null)} className="text-slate-400 hover:text-slate-600 text-xl font-bold leading-none">×</button>
-            </div>
-            <div className="overflow-auto flex-1">
-              {drillLoading ? (
-                <div className="flex items-center justify-center py-16">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
-                </div>
-              ) : drillData.length === 0 ? (
-                <div className="text-center py-16 text-slate-400">Nenhum registro encontrado</div>
-              ) : (
-                <table className="w-full text-sm">
-                  <thead className="sticky top-0 bg-slate-50">
-                    <tr>
-                      {drill.cols.map(col => (
-                        <th key={col.key} className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                          {col.label}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-50">
-                    {drillData.map((row, i) => (
-                      <tr key={i} className="hover:bg-slate-50 transition-colors">
-                        {drill.cols.map(col => (
-                          <td key={col.key} className={`px-4 py-2.5 text-slate-700 ${col.className || ''}`}>
-                            {col.fmt ? col.fmt(row[col.key]) : (row[col.key] ?? '—')}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-            <div className="px-6 py-3 border-t border-slate-100 text-xs text-slate-400">
-              {drillData.length} registro{drillData.length !== 1 ? 's' : ''}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -944,27 +622,20 @@ const ACCENT_MAP = {
   cyan:    { bg: 'bg-cyan-50',    icon: 'text-cyan-600',    value: 'text-cyan-700',    border: 'border-cyan-100' },
 } as const;
 
-function KpiCard({
-  title, value, sub, icon: Icon, accent,
-}: {
+function KpiCard({ title, value, sub, icon: Icon, accent }: {
   title: string; value: string; sub: string;
   icon: React.ComponentType<{ className?: string }>;
   accent: keyof typeof ACCENT_MAP;
-  onClick?: () => void;
 }) {
   const c = ACCENT_MAP[accent];
   return (
-    <div
-      className={`bg-white rounded-xl border shadow-sm p-4 ${c.border} ${onClick ? 'cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all' : ''}`}
-      onClick={onClick}
-    >
+    <div className={`bg-white rounded-xl border shadow-sm p-4 ${c.border}`}>
       <div className={`inline-flex p-2 rounded-lg mb-3 ${c.bg}`}>
         <Icon className={`w-4 h-4 ${c.icon}`} />
       </div>
       <p className="text-xs text-slate-500 font-medium mb-1 leading-tight">{title}</p>
       <p className={`text-xl font-bold ${c.value}`}>{value}</p>
       <p className="text-xs text-slate-400 mt-0.5">{sub}</p>
-      {onClick && <p className="text-xs text-slate-300 mt-1.5">clique para detalhar →</p>}
     </div>
   );
 }
@@ -984,31 +655,22 @@ function StatusBar({ label, pct, color, value }: { label: string; pct: number; c
   );
 }
 
-function ProximosTable({
-  title, icon, items, colLabel, colorScheme,
-}: {
-  title: string;
-  icon: React.ReactNode;
-  items: ProximoItem[];
-  colLabel: string;
-  colorScheme: 'green' | 'red';
+function ProximosTable({ title, icon, items, colLabel }: {
+  title: string; icon: React.ReactNode; items: ProximoItem[]; colLabel: string;
 }) {
   const hoje = new Date().toISOString().split('T')[0];
   const statusColor = (item: ProximoItem) => {
     if (item.status_pagamento === 'parcial') return 'bg-blue-100 text-blue-700';
     if (item.data_vencimento < hoje) return 'bg-red-100 text-red-700';
-    const diff = (new Date(item.data_vencimento).getTime() - Date.now()) / 86400000;
-    if (diff <= 3) return 'bg-amber-100 text-amber-700';
+    if ((new Date(item.data_vencimento).getTime() - Date.now()) / 86400000 <= 3) return 'bg-amber-100 text-amber-700';
     return 'bg-slate-100 text-slate-600';
   };
   const statusLabel = (item: ProximoItem) => {
     if (item.status_pagamento === 'parcial') return 'Parcial';
     if (item.data_vencimento < hoje) return 'Vencido';
-    const diff = (new Date(item.data_vencimento).getTime() - Date.now()) / 86400000;
-    if (diff <= 3) return 'Urgente';
+    if ((new Date(item.data_vencimento).getTime() - Date.now()) / 86400000 <= 3) return 'Urgente';
     return 'Pendente';
   };
-
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
       <div className="flex items-center gap-2 px-5 py-4 border-b border-slate-100">
@@ -1035,9 +697,7 @@ function ProximosTable({
                 <td className="px-4 py-2.5 text-slate-500">{fmtDate(item.data_vencimento)}</td>
                 <td className="px-4 py-2.5 text-right font-semibold text-slate-700">{fmtBRL(item.valor_parcela)}</td>
                 <td className="px-4 py-2.5 text-center">
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColor(item)}`}>
-                    {statusLabel(item)}
-                  </span>
+                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColor(item)}`}>{statusLabel(item)}</span>
                 </td>
               </tr>
             ))}
@@ -1049,11 +709,7 @@ function ProximosTable({
 }
 
 function ResumoCard({ label, value, accent }: { label: string; value: string; accent: 'green' | 'red' | 'blue' }) {
-  const colors = {
-    green: 'border-t-green-500 text-green-700',
-    red:   'border-t-red-500 text-red-600',
-    blue:  'border-t-blue-500 text-blue-700',
-  };
+  const colors = { green: 'border-t-green-500 text-green-700', red: 'border-t-red-500 text-red-600', blue: 'border-t-blue-500 text-blue-700' };
   return (
     <div className={`bg-white rounded-xl border border-slate-200 shadow-sm p-4 border-t-4 ${colors[accent]}`}>
       <p className="text-xs text-slate-500 uppercase tracking-wider mb-2">{label}</p>
