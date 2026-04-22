@@ -3,8 +3,8 @@ import { supabase } from '../lib/supabase';
 import {
   Chart as ChartJS,
   CategoryScale, LinearScale, BarElement, ArcElement,
-  LineElement, PointElement, Filler,
-  Title, Tooltip, Legend,
+  LineElement, PointElement, LineController, BarController, DoughnutController,
+  Filler, Title, Tooltip, Legend,
 } from 'chart.js';
 import { Bar, Doughnut, Line } from 'react-chartjs-2';
 import {
@@ -15,8 +15,8 @@ import {
 
 ChartJS.register(
   CategoryScale, LinearScale, BarElement, ArcElement,
-  LineElement, PointElement, Filler,
-  Title, Tooltip, Legend,
+  LineElement, PointElement, LineController, BarController, DoughnutController,
+  Filler, Title, Tooltip, Legend,
 );
 
 // ─── Types ────────────────────────────────────────────────────────────────────
