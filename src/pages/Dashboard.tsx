@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import {
   Chart as ChartJS,
@@ -81,6 +81,13 @@ type MesTrend = { mes: string; receita: number; custo: number };
 type ProgramaPie = { nome: string; total: number };
 type FluxoDia = { dia: string; entradas: number; saidas: number };
 
+type DrillItem = Record<string, any>;
+type DrillConfig = {
+  title: string;
+  cols: { key: string; label: string; fmt?: (v: any) => string; className?: string }[];
+  load: () => Promise<DrillItem[]>;
+} | null;
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 const fmtBRL = (v: number) =>
   v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -133,6 +140,9 @@ export default function Dashboard() {
   const [porPrograma, setPorPrograma] = useState<ProgramaPie[]>([]);
   const [fluxo30, setFluxo30] = useState<FluxoDia[]>([]);
   const [loading, setLoading] = useState(true);
+  const [drill, setDrill] = useState<DrillConfig>(null);
+  const [drillData, setDrillData] = useState<DrillItem[]>([]);
+  const [drillLoading, setDrillLoading] = useState(false);
 
   const loadKPI = useCallback(async () => {
     const hoje = new Date().toISOString().split('T')[0];
@@ -351,6 +361,136 @@ export default function Dashboard() {
     ]).finally(() => setLoading(false));
   }, []);
 
+  const openDrill = useCallback(async (config: DrillConfig) => {
+    if (!config) return;
+    setDrill(config);
+    setDrillData([]);
+    setDrillLoading(true);
+    const data = await config.load();
+    setDrillData(data);
+    setDrillLoading(false);
+  }, []);
+
+  const drillConfigs = useCallback((): Record<string, DrillConfig> => {
+    const hoje = new Date().toISOString().split('T')[0];
+    const d = new Date();
+    const inicioMes = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+    const em7dias = new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0];
+
+    return {
+      receita: {
+        title: 'Receita Bruta — Vendas do Mês',
+        cols: [
+          { key: 'parceiro_nome', label: 'Parceiro' },
+          { key: 'programa_nome', label: 'Programa' },
+          { key: 'data_venda', label: 'Data', fmt: (v) => fmtDate(v) },
+          { key: 'valor_total', label: 'Valor', fmt: fmtBRL, className: 'text-right font-semibold text-blue-700' },
+          { key: 'status', label: 'Status' },
+        ],
+        load: async () => {
+          const { data } = await supabase.from('vendas')
+            .select('parceiro_nome, programa_nome, data_venda, valor_total, status')
+            .gte('data_venda', inicioMes).neq('status', 'cancelada')
+            .order('data_venda', { ascending: false });
+          return data || [];
+        },
+      },
+      custo: {
+        title: 'Custo de Aquisição — Compras do Mês',
+        cols: [
+          { key: 'descricao', label: 'Descrição' },
+          { key: 'data', label: 'Data', fmt: (v) => fmtDate(v) },
+          { key: 'valor_total', label: 'Valor', fmt: fmtBRL, className: 'text-right font-semibold text-red-600' },
+          { key: 'tipo', label: 'Tipo' },
+        ],
+        load: async () => {
+          const [{ data: c }, { data: cb }] = await Promise.all([
+            supabase.from('compras').select('descricao, data_entrada, valor_total').gte('data_entrada', inicioMes).order('data_entrada', { ascending: false }),
+            supabase.from('compra_bonificada').select('descricao, data_compra, custo_total').gte('data_compra', inicioMes).order('data_compra', { ascending: false }),
+          ]);
+          return [
+            ...(c || []).map((r: any) => ({ descricao: r.descricao || '—', data: r.data_entrada, valor_total: r.valor_total, tipo: 'Compra' })),
+            ...(cb || []).map((r: any) => ({ descricao: r.descricao || '—', data: r.data_compra, valor_total: r.custo_total, tipo: 'Bonificada' })),
+          ].sort((a, b) => b.data?.localeCompare(a.data));
+        },
+      },
+      aReceber7d: {
+        title: 'A Receber — Vencendo em 7 dias',
+        cols: [
+          { key: 'parceiro', label: 'Parceiro/Cliente' },
+          { key: 'data_vencimento', label: 'Vencimento', fmt: (v) => fmtDate(v) },
+          { key: 'valor_parcela', label: 'Valor', fmt: fmtBRL, className: 'text-right font-semibold text-emerald-700' },
+          { key: 'status_pagamento', label: 'Status' },
+        ],
+        load: async () => {
+          const { data } = await supabase.from('contas_a_receber')
+            .select('data_vencimento, valor_parcela, status_pagamento, parceiros(nome)')
+            .gt('data_vencimento', hoje).lte('data_vencimento', em7dias)
+            .neq('status_pagamento', 'pago').order('data_vencimento');
+          return (data || []).map((r: any) => ({ ...r, parceiro: r.parceiros?.nome || '—' }));
+        },
+      },
+      aPagar7d: {
+        title: 'A Pagar — Vencendo em 7 dias',
+        cols: [
+          { key: 'descricao', label: 'Descrição' },
+          { key: 'data_vencimento', label: 'Vencimento', fmt: (v) => fmtDate(v) },
+          { key: 'valor_parcela', label: 'Valor', fmt: fmtBRL, className: 'text-right font-semibold text-orange-600' },
+          { key: 'status_pagamento', label: 'Status' },
+        ],
+        load: async () => {
+          const { data } = await supabase.from('contas_a_pagar')
+            .select('descricao, data_vencimento, valor_parcela, status_pagamento')
+            .gt('data_vencimento', hoje).lte('data_vencimento', em7dias)
+            .neq('status_pagamento', 'pago').order('data_vencimento');
+          return (data || []).map((r: any) => ({ ...r, descricao: r.descricao || '—' }));
+        },
+      },
+      aPagarVencido: {
+        title: 'Contas a Pagar — Vencidas',
+        cols: [
+          { key: 'descricao', label: 'Descrição' },
+          { key: 'data_vencimento', label: 'Vencimento', fmt: (v) => fmtDate(v), className: 'text-red-600' },
+          { key: 'valor_parcela', label: 'Valor', fmt: fmtBRL, className: 'text-right font-semibold text-red-600' },
+          { key: 'status_pagamento', label: 'Status' },
+        ],
+        load: async () => {
+          const { data } = await supabase.from('contas_a_pagar')
+            .select('descricao, data_vencimento, valor_parcela, status_pagamento')
+            .lt('data_vencimento', hoje).eq('status_pagamento', 'pendente')
+            .order('data_vencimento');
+          return (data || []).map((r: any) => ({ ...r, descricao: r.descricao || '—' }));
+        },
+      },
+      estoque: {
+        title: 'Estoque de Milhas por Programa',
+        cols: [
+          { key: 'programa_nome', label: 'Programa' },
+          { key: 'total_pontos', label: 'Pontos', fmt: (v) => fmtPts(v), className: 'text-right' },
+          { key: 'valor_total', label: 'Valor (R$)', fmt: fmtBRL, className: 'text-right font-semibold text-purple-700' },
+        ],
+        load: async () => estoque,
+      },
+      vendaTicket: {
+        title: 'Vendas do Mês — Ticket e Milheiro',
+        cols: [
+          { key: 'parceiro_nome', label: 'Parceiro' },
+          { key: 'programa_nome', label: 'Programa' },
+          { key: 'data_venda', label: 'Data', fmt: (v) => fmtDate(v) },
+          { key: 'valor_total', label: 'Ticket', fmt: fmtBRL, className: 'text-right' },
+          { key: 'valor_milheiro', label: 'Milheiro', fmt: fmtBRL, className: 'text-right font-semibold text-cyan-700' },
+        ],
+        load: async () => {
+          const { data } = await supabase.from('vendas')
+            .select('parceiro_nome, programa_nome, data_venda, valor_total, valor_milheiro')
+            .gte('data_venda', inicioMes).neq('status', 'cancelada')
+            .order('valor_milheiro', { ascending: false });
+          return data || [];
+        },
+      },
+    };
+  }, [estoque]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -382,17 +522,20 @@ export default function Dashboard() {
       {/* Alert Banners */}
       <div className="space-y-2">
         {kpi.contasVencidasCount > 0 && (
-          <div className="flex items-center gap-4 bg-red-50 border border-red-200 rounded-xl px-5 py-3 border-l-4 border-l-red-500">
+          <button
+            onClick={() => openDrill(drillConfigs().aPagarVencido)}
+            className="w-full text-left flex items-center gap-4 bg-red-50 border border-red-200 rounded-xl px-5 py-3 border-l-4 border-l-red-500 hover:bg-red-100 transition-colors"
+          >
             <div className="w-2.5 h-2.5 rounded-full bg-red-500 flex-shrink-0" />
             <div className="flex-1 min-w-0">
               <span className="font-semibold text-red-800 text-sm">
                 {kpi.contasVencidasCount} Conta{kpi.contasVencidasCount !== 1 ? 's' : ''} a Pagar Vencida{kpi.contasVencidasCount !== 1 ? 's' : ''}
               </span>
               <span className="text-red-600 text-xs ml-2">
-                Total de {fmtBRL(kpi.contasVencidasValor)} em atraso
+                Total de {fmtBRL(kpi.contasVencidasValor)} em atraso — clique para ver
               </span>
             </div>
-          </div>
+          </button>
         )}
         {kpi.receberVencidasCount > 0 && (
           <div className="flex items-center gap-4 bg-amber-50 border border-amber-200 rounded-xl px-5 py-3 border-l-4 border-l-amber-500">
@@ -424,6 +567,7 @@ export default function Dashboard() {
           sub="Fonte: vendas"
           icon={TrendingUp}
           accent="blue"
+          onClick={() => openDrill(drillConfigs().receita)}
         />
         <KpiCard
           title="Custo de Aquisição"
@@ -431,6 +575,7 @@ export default function Dashboard() {
           sub="compras + bonificadas"
           icon={ShoppingCart}
           accent="red"
+          onClick={() => openDrill(drillConfigs().custo)}
         />
         <KpiCard
           title="Margem Bruta"
@@ -445,6 +590,7 @@ export default function Dashboard() {
           sub={`${kpi.aReceberVencendo7dCount} parcelas`}
           icon={ArrowDownCircle}
           accent="emerald"
+          onClick={() => openDrill(drillConfigs().aReceber7d)}
         />
         <KpiCard
           title="A Pagar (7 dias)"
@@ -452,6 +598,7 @@ export default function Dashboard() {
           sub={`${kpi.aPagarVencendo7dCount} parcelas`}
           icon={ArrowUpCircle}
           accent="orange"
+          onClick={() => openDrill(drillConfigs().aPagar7d)}
         />
         <KpiCard
           title="Estoque de Milhas"
@@ -459,6 +606,7 @@ export default function Dashboard() {
           sub={`${fmtPts(totalEstoque)} pts — custo médio`}
           icon={Package}
           accent="purple"
+          onClick={() => openDrill(drillConfigs().estoque)}
         />
         <KpiCard
           title="Ticket Médio Venda"
@@ -466,6 +614,7 @@ export default function Dashboard() {
           sub="valor_total / qtd vendas"
           icon={DollarSign}
           accent="indigo"
+          onClick={() => openDrill(drillConfigs().vendaTicket)}
         />
         <KpiCard
           title="Valor Milheiro Médio"
@@ -473,6 +622,7 @@ export default function Dashboard() {
           sub="média vendas do mês"
           icon={CreditCard}
           accent="cyan"
+          onClick={() => openDrill(drillConfigs().vendaTicket)}
         />
       </div>
 
@@ -742,6 +892,53 @@ export default function Dashboard() {
           )}
         </div>
       </section>
+
+      {/* Drill-down Modal */}
+      {drill && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={() => setDrill(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+              <h2 className="font-bold text-slate-800 text-lg">{drill.title}</h2>
+              <button onClick={() => setDrill(null)} className="text-slate-400 hover:text-slate-600 text-xl font-bold leading-none">×</button>
+            </div>
+            <div className="overflow-auto flex-1">
+              {drillLoading ? (
+                <div className="flex items-center justify-center py-16">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+                </div>
+              ) : drillData.length === 0 ? (
+                <div className="text-center py-16 text-slate-400">Nenhum registro encontrado</div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0 bg-slate-50">
+                    <tr>
+                      {drill.cols.map(col => (
+                        <th key={col.key} className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                          {col.label}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {drillData.map((row, i) => (
+                      <tr key={i} className="hover:bg-slate-50 transition-colors">
+                        {drill.cols.map(col => (
+                          <td key={col.key} className={`px-4 py-2.5 text-slate-700 ${col.className || ''}`}>
+                            {col.fmt ? col.fmt(row[col.key]) : (row[col.key] ?? '—')}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            <div className="px-6 py-3 border-t border-slate-100 text-xs text-slate-400">
+              {drillData.length} registro{drillData.length !== 1 ? 's' : ''}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -764,16 +961,21 @@ function KpiCard({
   title: string; value: string; sub: string;
   icon: React.ComponentType<{ className?: string }>;
   accent: keyof typeof ACCENT_MAP;
+  onClick?: () => void;
 }) {
   const c = ACCENT_MAP[accent];
   return (
-    <div className={`bg-white rounded-xl border shadow-sm p-4 ${c.border}`}>
+    <div
+      className={`bg-white rounded-xl border shadow-sm p-4 ${c.border} ${onClick ? 'cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all' : ''}`}
+      onClick={onClick}
+    >
       <div className={`inline-flex p-2 rounded-lg mb-3 ${c.bg}`}>
         <Icon className={`w-4 h-4 ${c.icon}`} />
       </div>
       <p className="text-xs text-slate-500 font-medium mb-1 leading-tight">{title}</p>
       <p className={`text-xl font-bold ${c.value}`}>{value}</p>
       <p className="text-xs text-slate-400 mt-0.5">{sub}</p>
+      {onClick && <p className="text-xs text-slate-300 mt-1.5">clique para detalhar →</p>}
     </div>
   );
 }
