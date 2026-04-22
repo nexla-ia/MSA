@@ -1,23 +1,18 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import {
   Chart as ChartJS,
   CategoryScale, LinearScale, BarElement, ArcElement,
-  LineElement, PointElement, LineController, BarController, DoughnutController,
-  Filler, Title, Tooltip, Legend,
+  Title, Tooltip, Legend,
 } from 'chart.js';
-import { Bar, Doughnut, Line } from 'react-chartjs-2';
+import { Bar, Doughnut } from 'react-chartjs-2';
 import {
   Users, Award, Bell, Calendar, AlertCircle, CheckCircle2,
   TrendingUp, DollarSign, ShoppingCart, AlertTriangle, Clock,
   Package, CreditCard, ArrowDownCircle, ArrowUpCircle,
 } from 'lucide-react';
 
-ChartJS.register(
-  CategoryScale, LinearScale, BarElement, ArcElement,
-  LineElement, PointElement, LineController, BarController, DoughnutController,
-  Filler, Title, Tooltip, Legend,
-);
+ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Title, Tooltip, Legend);
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type KPI = {
@@ -691,27 +686,21 @@ export default function Dashboard() {
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
           <h3 className="font-semibold text-slate-800 mb-1">Fluxo de Caixa — 30 Dias</h3>
           <p className="text-xs text-slate-400 mb-4">Entradas e saídas projetadas por vencimento</p>
-          <Line
+          <Bar
             data={{
               labels: fluxo30.map((d, i) => i % 5 === 0 ? d.dia.split('-')[2] : ''),
               datasets: [
                 {
                   label: 'Entradas',
                   data: fluxo30.map(d => d.entradas),
-                  borderColor: '#10b981',
-                  backgroundColor: 'rgba(16,185,129,0.1)',
-                  fill: true,
-                  tension: 0.4,
-                  pointRadius: 2,
+                  backgroundColor: 'rgba(16,185,129,0.6)',
+                  borderRadius: 2,
                 },
                 {
                   label: 'Saídas',
                   data: fluxo30.map(d => d.saidas),
-                  borderColor: '#ef4444',
-                  backgroundColor: 'rgba(239,68,68,0.1)',
-                  fill: true,
-                  tension: 0.4,
-                  pointRadius: 2,
+                  backgroundColor: 'rgba(239,68,68,0.6)',
+                  borderRadius: 2,
                 },
               ],
             }}
