@@ -210,15 +210,21 @@ export default function ProgramasClubes() {
     }
 
     const filtrados = programasClubes.filter((item) => {
+      const parceiroNome = (
+        item.nome_parceiro ||
+        parceiros.find(p => p.id === item.parceiro_id)?.nome_parceiro ||
+        ''
+      ).toLowerCase();
       const programaNome = programas.find(p => p.id === item.programa_id)?.nome?.toLowerCase() || '';
-      const contaFamiliaNome = contasFamilia.find(cf => cf.id === item.conta_familia_id)?.nome_conta?.toLowerCase() || '';
       const clubeNome = produtos.find(p => p.id === item.clube_produto_id)?.nome?.toLowerCase() || '';
       const statusProgramaNome = statusProgramas.find(sp => sp.id === item.status_programa_id)?.status?.toLowerCase() || '';
+      const cpfParceiro = parceiros.find(p => p.id === item.parceiro_id)?.cpf?.replace(/\D/g, '') || item.cpf?.replace(/\D/g, '') || '';
+      const telefoneParceiro = parceiros.find(p => p.id === item.parceiro_id)?.telefone?.replace(/\D/g, '') || item.telefone?.replace(/\D/g, '') || '';
 
       return (
-        (item.nome_parceiro?.toLowerCase() || '').includes(termo) ||
-        (item.cpf?.replace(/\D/g, '') || '').includes(termo.replace(/\D/g, '')) ||
-        (item.telefone?.replace(/\D/g, '') || '').includes(termo.replace(/\D/g, '')) ||
+        parceiroNome.includes(termo) ||
+        cpfParceiro.includes(termo.replace(/\D/g, '')) ||
+        telefoneParceiro.includes(termo.replace(/\D/g, '')) ||
         (item.email?.toLowerCase() || '').includes(termo) ||
         (item.n_fidelidade?.toLowerCase() || '').includes(termo) ||
         programaNome.includes(termo) ||
@@ -232,7 +238,7 @@ export default function ProgramasClubes() {
     });
 
     setProgramasClubesFiltrados(filtrados);
-  }, [searchTerm, programasClubes, programas, contasFamilia, produtos, statusProgramas]);
+  }, [searchTerm, programasClubes, parceiros, programas, produtos, statusProgramas]);
 
   const fetchData = async () => {
     try {
