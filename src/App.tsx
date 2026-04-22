@@ -43,6 +43,7 @@ import VendaLocalizador from './pages/VendaLocalizador';
 import ContasReceber from './pages/ContasReceber';
 import ContasAPagar from './pages/ContasAPagar';
 import DashboardFinanceiro from './pages/DashboardFinanceiro';
+import FluxoCaixa from './pages/FluxoCaixa';
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { usuario, loading } = useAuth();
@@ -140,6 +141,7 @@ function AppRoutes() {
         <Route path="/contas-receber" element={<PermissionRoute recurso="contas_receber"><ContasReceber /></PermissionRoute>} />
         <Route path="/contas-a-pagar" element={<PermissionRoute recurso="contas_a_pagar"><ContasAPagar /></PermissionRoute>} />
         <Route path="/dashboard-financeiro" element={<PermissionRoute recurso="contas_a_pagar"><DashboardFinanceiro /></PermissionRoute>} />
+        <Route path="/fluxo-caixa" element={<PermissionRoute recurso="contas_a_pagar"><FluxoCaixa /></PermissionRoute>} />
         <Route path="*" element={<Navigate to="/dashboard" />} />
       </Routes>
     </Layout>
