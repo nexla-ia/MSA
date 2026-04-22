@@ -648,7 +648,7 @@ CREATE TABLE IF NOT EXISTS public.tipos_compra (
   nome text NOT NULL,
   descricao text,
   ativo boolean DEFAULT true,
-  nao_registrar_estoque boolean DEFAULT false,
+  nao_registrar_estoque boolean DEFAULT true,
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now(),
   PRIMARY KEY (id)

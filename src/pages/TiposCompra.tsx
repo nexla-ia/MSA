@@ -22,7 +22,7 @@ export default function TiposCompra() {
   const [nome, setNome] = useState('');
   const [descricao, setDescricao] = useState('');
   const [ativo, setAtivo] = useState(true);
-  const [naoRegistrarEstoque, setNaoRegistrarEstoque] = useState(false);
+  const [naoRegistrarEstoque, setNaoRegistrarEstoque] = useState(true);
 
   const [dialogConfig, setDialogConfig] = useState<{
     isOpen: boolean;
@@ -54,7 +54,7 @@ export default function TiposCompra() {
     setNome('');
     setDescricao('');
     setAtivo(true);
-    setNaoRegistrarEstoque(false);
+    setNaoRegistrarEstoque(true);
     setModalOpen(true);
   };
 
