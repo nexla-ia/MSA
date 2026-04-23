@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS public.controle_emissoes (
   status                text DEFAULT 'ativo' CHECK (status IN ('ativo', 'cancelado')),
   observacao            text,
   arquivo_origem        text,
-  created_by            uuid REFERENCES usuarios(id) ON DELETE SET NULL,
+  created_by            uuid REFERENCES public.usuarios(id) ON DELETE SET NULL,
   created_at            timestamptz DEFAULT now(),
   updated_at            timestamptz DEFAULT now()
 );
