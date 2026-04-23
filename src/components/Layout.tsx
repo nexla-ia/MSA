@@ -21,7 +21,11 @@ import {
   TrendingUp,
   ShoppingCart,
   Gift,
-  ArrowRightLeft
+  ArrowRightLeft,
+  BarChart2,
+  Target,
+  RefreshCw,
+  BookOpen
 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 
@@ -73,10 +77,14 @@ export default function Layout({ children }: LayoutProps) {
   ];
 
   const allFinanceiroItems = [
-    { path: '/dashboard-financeiro', label: 'Dashboard Financeiro', icon: LayoutDashboard, recurso: 'contas_a_pagar' },
-    { path: '/fluxo-caixa', label: 'Fluxo de Caixa', icon: TrendingUp, recurso: 'contas_a_pagar' },
-    { path: '/contas-receber', label: 'Contas a Receber', icon: DollarSign, recurso: 'contas_receber' },
-    { path: '/contas-a-pagar', label: 'Contas a Pagar', icon: DollarSign, recurso: 'contas_a_pagar' },
+    { path: '/dashboard-financeiro',   label: 'Dashboard Financeiro', icon: LayoutDashboard, recurso: 'contas_a_pagar' },
+    { path: '/fluxo-caixa',            label: 'Fluxo de Caixa',       icon: TrendingUp,      recurso: 'contas_a_pagar' },
+    { path: '/dre',                    label: 'DRE',                   icon: BarChart2,       recurso: 'contas_a_pagar' },
+    { path: '/orcamento',              label: 'Orçamento',             icon: Target,          recurso: 'contas_a_pagar' },
+    { path: '/lancamentos',            label: 'Lançamentos',           icon: BookOpen,        recurso: 'contas_a_pagar' },
+    { path: '/conciliacao-bancaria',   label: 'Conciliação Bancária',  icon: RefreshCw,       recurso: 'contas_a_pagar' },
+    { path: '/contas-receber',         label: 'Contas a Receber',      icon: DollarSign,      recurso: 'contas_receber' },
+    { path: '/contas-a-pagar',         label: 'Contas a Pagar',        icon: DollarSign,      recurso: 'contas_a_pagar' },
   ];
 
   const logsItemData = { path: '/logs', label: 'Logs', icon: FolderTree, recurso: 'logs' };
