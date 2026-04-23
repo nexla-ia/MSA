@@ -92,7 +92,7 @@ interface FormaPagamento {
 }
 
 export default function TransferenciaPontos() {
-  const { usuario } = useAuth();
+  const { usuario, isAdmin } = useAuth();
   const [transferencias, setTransferencias] = useState<Transferencia[]>([]);
   const [filtroParceiro, setFiltroParceiro] = useState('');
   const [filtroOrigem, setFiltroOrigem] = useState('');
@@ -724,14 +724,24 @@ export default function TransferenciaPontos() {
       message: 'Excluir esta transferência reverterá as alterações no estoque (origem e destino). Se os pontos do destino já foram vendidos, a reversão será parcial. Deseja continuar?',
       onConfirm: async () => {
         try {
-          // 1. Reverter estoque e contas_receber
+          // 1. Admin mode ativa bypass de validações de saldo no banco
+          if (isAdmin && usuario) {
+            await supabase.rpc('set_admin_mode', { usuario_id: usuario.id, is_admin: true });
+          }
+
+          // 2. Reverter estoque e contas_receber
           const { data: revertResult, error: revertError } = await supabase.rpc(
             'reverter_transferencia_pontos',
             { p_transfer_id: id }
           );
+
+          if (isAdmin && usuario) {
+            await supabase.rpc('set_admin_mode', { usuario_id: usuario.id, is_admin: false });
+          }
+
           if (revertError) throw new Error(`Erro ao reverter estoque: ${revertError.message}`);
 
-          // 2. Deletar o registro
+          // 3. Deletar o registro
           const { error } = await supabase
             .from('transferencia_pontos')
             .delete()
