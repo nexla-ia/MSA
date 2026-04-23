@@ -106,6 +106,7 @@ export default function DashboardFinanceiro() {
   const [dataCR, setDataCR] = useState<ContaReceber[]>([]);
   const [dataAP, setDataAP] = useState<ContaPagar[]>([]);
   const [cartoesMap, setCartoesMap] = useState<Record<string, string>>({});
+  const [cartoesTipoMap, setCartoesTipoMap] = useState<Record<string, string>>({});
   const [principalIdMap, setPrincipalIdMap] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [lastUpd, setLastUpd] = useState('');
@@ -132,13 +133,16 @@ export default function DashboardFinanceiro() {
     setDataCR((cr as ContaReceber[]) || []);
     setDataAP((ap as ContaPagar[]) || []);
     const map: Record<string, string> = {};
+    const tipoMap: Record<string, string> = {};
     const pidMap: Record<string, string> = {};
     (cartoes || []).forEach((c: { id: string; cartao: string; banco_emissor: string; tipo_cartao?: string; cartao_principal_id?: string | null }) => {
       map[c.id] = `${c.cartao} (${c.banco_emissor})`;
+      tipoMap[c.id] = c.tipo_cartao || 'principal';
       const isSubCard = c.tipo_cartao === 'adicional' || c.tipo_cartao === 'virtual';
       pidMap[c.id] = (isSubCard && c.cartao_principal_id) ? c.cartao_principal_id : c.id;
     });
     setCartoesMap(map);
+    setCartoesTipoMap(tipoMap);
     setPrincipalIdMap(pidMap);
     setLastUpd(new Date().toLocaleTimeString('pt-BR'));
     setLoading(false);
@@ -589,14 +593,32 @@ export default function DashboardFinanceiro() {
                     <td className="px-4 py-3"><StatusBadge status={r.status_pagamento} dv={r.data_vencimento} /></td>
                     <td className="px-4 py-3 text-slate-500">{fmtDate(r.data_pagamento)}</td>
                     <td className="px-4 py-3 text-emerald-600 font-medium">{r.valor_pago ? fmtBRL(r.valor_pago) : <span className="text-slate-300">—</span>}</td>
-                    <td className="px-4 py-3 text-blue-600 text-xs max-w-[160px]">
+                    <td className="px-4 py-3 text-xs max-w-[180px]">
                       {r.cartao_id ? (() => {
                         const pid = principalIdMap[r.cartao_id] || r.cartao_id;
                         const isSub = pid !== r.cartao_id;
+                        const tipo = cartoesTipoMap[r.cartao_id] || '';
+                        const nomeCartao = cartoesMap[r.cartao_id] || r.cartao_id.substring(0, 8) + '...';
+                        const nomePrincipal = isSub ? (cartoesMap[pid] || '') : '';
                         return (
-                          <div className="truncate">
-                            <span title={cartoesMap[pid] || ''}>{cartoesMap[pid] || r.cartao_id.substring(0, 8) + '...'}</span>
-                            {isSub && <span className="ml-1 text-[9px] bg-slate-100 text-slate-500 px-1 py-0.5 rounded">adic.</span>}
+                          <div>
+                            <div className="flex items-center gap-1 flex-wrap">
+                              <span className="text-blue-600 truncate" title={nomeCartao}>{nomeCartao}</span>
+                              {isSub && (
+                                <span className={`shrink-0 px-1.5 py-0.5 text-[9px] font-semibold rounded-full border ${
+                                  tipo === 'virtual'
+                                    ? 'bg-purple-50 text-purple-600 border-purple-200'
+                                    : 'bg-blue-50 text-blue-600 border-blue-200'
+                                }`}>
+                                  {tipo}
+                                </span>
+                              )}
+                            </div>
+                            {isSub && nomePrincipal && (
+                              <div className="text-[10px] text-slate-400 truncate mt-0.5" title={nomePrincipal}>
+                                ↳ {nomePrincipal}
+                              </div>
+                            )}
                           </div>
                         );
                       })() : <span className="text-slate-300">—</span>}
