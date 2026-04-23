@@ -60,6 +60,7 @@ interface Compra {
   parceiro_id?: string;
   programa_id?: string;
   tipo: string;
+  tipo_compra_id?: string;
   data_entrada: string;
   pontos_milhas: number;
   bonus?: number;
@@ -641,7 +642,11 @@ export default function Compras() {
 
   const handleEdit = async (compra: Compra) => {
     setEditingItem(compra);
-    setFormData(compra);
+    // Garante tipo_compra_id populado mesmo em registros antigos que só têm tipo (texto)
+    const tipoCompraId = compra.tipo_compra_id
+      || tiposCompra.find(t => t.nome === compra.tipo)?.id
+      || '';
+    setFormData({ ...compra, tipo_compra_id: tipoCompraId });
     setIsModalOpen(true);
 
     if (compra.status === 'Concluído' && compra.parceiro_id && compra.programa_id) {
@@ -1557,14 +1562,17 @@ export default function Compras() {
                 Tipo <span className="text-red-500">*</span>
               </label>
               <select
-                value={formData.tipo || ''}
-                onChange={(e) => setFormData({ ...formData, tipo: e.target.value })}
+                value={formData.tipo_compra_id || ''}
+                onChange={(e) => {
+                  const t = tiposCompra.find(x => x.id === e.target.value);
+                  setFormData({ ...formData, tipo_compra_id: e.target.value, tipo: t?.nome || '' });
+                }}
                 required
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               >
                 <option value="">Selecione</option>
                 {tiposCompra.map((tipo) => (
-                  <option key={tipo.id} value={tipo.nome}>{tipo.nome}</option>
+                  <option key={tipo.id} value={tipo.id}>{tipo.nome}</option>
                 ))}
               </select>
             </div>
