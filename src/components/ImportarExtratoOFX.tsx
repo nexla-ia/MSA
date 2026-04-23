@@ -8,6 +8,17 @@ interface OFXTransaction {
   amount: number;      // sempre positivo
   tipo: 'credito' | 'debito';
   description: string;
+  trntype: string;     // CREDIT, DEBIT, PAYMENT, etc.
+}
+
+interface OFXHeader {
+  org: string;       // nome do banco
+  bankId: string;    // código do banco (077, 237...)
+  acctId: string;    // número da conta
+  dtStart: string;   // início do período YYYY-MM-DD
+  dtEnd: string;     // fim do período YYYY-MM-DD
+  balAmt: number | null; // saldo final
+  dtAsOf: string;    // data do saldo YYYY-MM-DD
 }
 
 interface Props {
@@ -17,10 +28,32 @@ interface Props {
   onImportSuccess: () => void;
 }
 
+// ── Helpers ────────────────────────────────────────────────────────────────
+const dtOFXToISO = (dt: string): string => {
+  if (!dt || dt.length < 8) return '';
+  return `${dt.substring(0, 4)}-${dt.substring(4, 6)}-${dt.substring(6, 8)}`;
+};
+
 // ── Parser OFX ─────────────────────────────────────────────────────────────
-function parseOFX(content: string): { transactions: OFXTransaction[]; warnings: string[] } {
+function parseOFX(content: string): { transactions: OFXTransaction[]; warnings: string[]; header: OFXHeader } {
   const warnings: string[] = [];
   const transactions: OFXTransaction[] = [];
+
+  // Extrai qualquer tag do conteúdo completo (para o header)
+  const getGlobal = (tag: string): string => {
+    const m = content.match(new RegExp(`<${tag}>([^<\n\r]+)`, 'i'));
+    return m ? m[1].trim() : '';
+  };
+
+  const header: OFXHeader = {
+    org:     getGlobal('ORG') || getGlobal('FI'),
+    bankId:  getGlobal('BANKID'),
+    acctId:  getGlobal('ACCTID'),
+    dtStart: dtOFXToISO(getGlobal('DTSTART')),
+    dtEnd:   dtOFXToISO(getGlobal('DTEND')),
+    balAmt:  (() => { const v = parseFloat(getGlobal('BALAMT').replace(',', '.')); return isNaN(v) ? null : v; })(),
+    dtAsOf:  dtOFXToISO(getGlobal('DTASOF')),
+  };
 
   const body = content.includes('<OFX>')
     ? content.substring(content.indexOf('<OFX>'))
@@ -30,7 +63,7 @@ function parseOFX(content: string): { transactions: OFXTransaction[]; warnings: 
 
   if (blocks.length === 0) {
     warnings.push('Nenhuma transação encontrada no arquivo OFX.');
-    return { transactions, warnings };
+    return { transactions, warnings, header };
   }
 
   blocks.forEach((block, idx) => {
@@ -43,18 +76,15 @@ function parseOFX(content: string): { transactions: OFXTransaction[]; warnings: 
     const fitid   = get('FITID');
     const dtpost  = get('DTPOSTED');
     const trnamt  = get('TRNAMT');
-    const trntype = get('TRNTYPE');
+    const trntype = get('TRNTYPE') || '';
     const memo    = get('MEMO') || get('NAME') || 'Sem descrição';
 
-    if (!fitid || !dtpost || !trnamt || !trntype) {
+    if (!fitid || !dtpost || !trnamt) {
       warnings.push(`Transação ${idx + 1}: campos obrigatórios ausentes — ignorada.`);
       return;
     }
 
-    const year  = dtpost.substring(0, 4);
-    const month = dtpost.substring(4, 6);
-    const day   = dtpost.substring(6, 8);
-    const date  = `${year}-${month}-${day}`;
+    const date  = dtOFXToISO(dtpost);
 
     const valor = parseFloat(trnamt.replace(',', '.'));
     if (isNaN(valor)) {
@@ -62,16 +92,27 @@ function parseOFX(content: string): { transactions: OFXTransaction[]; warnings: 
       return;
     }
 
+    // TRNTYPE como fallback: se o valor for zero, usa o tipo para determinar direção
+    const tipoByType = (['CREDIT', 'DEP', 'INT', 'DIV', 'DIRECTDEP'].includes(trntype.toUpperCase()))
+      ? 'credito'
+      : (['DEBIT', 'PAYMENT', 'CHECK', 'POS', 'ATM', 'FEE', 'DIRECTDEBIT'].includes(trntype.toUpperCase()))
+        ? 'debito'
+        : null;
+    const tipo: 'credito' | 'debito' = valor !== 0
+      ? (valor > 0 ? 'credito' : 'debito')
+      : (tipoByType ?? 'debito');
+
     transactions.push({
       fitid,
       date,
       amount: Math.abs(valor),
-      tipo: valor >= 0 ? 'credito' : 'debito',
+      tipo,
       description: memo,
+      trntype: trntype.toUpperCase(),
     });
   });
 
-  return { transactions, warnings };
+  return { transactions, warnings, header };
 }
 
 const fmtBRL = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -88,6 +129,7 @@ export default function ImportarExtratoOFX({ contaBancariaId, contaBancariaNome,
   const [transactions, setTransactions] = useState<OFXTransaction[]>([]);
   const [warnings, setWarnings]   = useState<string[]>([]);
   const [loading, setLoading]     = useState(false);
+  const [ofxHeader, setOfxHeader] = useState<OFXHeader | null>(null);
   const [importResult, setImportResult] = useState<{ inseridos: number; duplicatas: number }>({ inseridos: 0, duplicatas: 0 });
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -102,9 +144,10 @@ export default function ImportarExtratoOFX({ contaBancariaId, contaBancariaNome,
     const reader = new FileReader();
     reader.onload = (e) => {
       const content = e.target?.result as string;
-      const { transactions: txs, warnings: warns } = parseOFX(content);
+      const { transactions: txs, warnings: warns, header } = parseOFX(content);
       setTransactions(txs);
       setWarnings(warns);
+      setOfxHeader(header);
       setLoading(false);
       if (txs.length > 0) setEtapa('preview');
     };
@@ -162,6 +205,7 @@ export default function ImportarExtratoOFX({ contaBancariaId, contaBancariaNome,
     setTransactions([]);
     setWarnings([]);
     setFileName('');
+    setOfxHeader(null);
     setImportResult({ inseridos: 0, duplicatas: 0 });
   };
 
@@ -233,6 +277,41 @@ export default function ImportarExtratoOFX({ contaBancariaId, contaBancariaNome,
               {/* ETAPA 2 — Preview */}
               {etapa === 'preview' && (
                 <>
+                  {/* Card de informações do arquivo OFX */}
+                  {ofxHeader && (
+                    <div className="mb-4 bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 grid grid-cols-2 gap-x-6 gap-y-1 text-xs">
+                      {ofxHeader.org && (
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-slate-400 w-16 shrink-0">Banco</span>
+                          <span className="font-medium text-slate-700">{ofxHeader.org}{ofxHeader.bankId ? ` (${ofxHeader.bankId})` : ''}</span>
+                        </div>
+                      )}
+                      {ofxHeader.acctId && (
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-slate-400 w-16 shrink-0">Conta</span>
+                          <span className="font-medium text-slate-700">{ofxHeader.acctId}</span>
+                        </div>
+                      )}
+                      {(ofxHeader.dtStart || ofxHeader.dtEnd) && (
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-slate-400 w-16 shrink-0">Período</span>
+                          <span className="font-medium text-slate-700">
+                            {ofxHeader.dtStart ? fmtDate(ofxHeader.dtStart) : '?'} → {ofxHeader.dtEnd ? fmtDate(ofxHeader.dtEnd) : '?'}
+                          </span>
+                        </div>
+                      )}
+                      {ofxHeader.balAmt !== null && (
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-slate-400 w-16 shrink-0">Saldo final</span>
+                          <span className={`font-semibold ${ofxHeader.balAmt >= 0 ? 'text-green-700' : 'text-red-600'}`}>
+                            {fmtBRL(ofxHeader.balAmt)}
+                            {ofxHeader.dtAsOf && <span className="text-slate-400 font-normal ml-1">em {fmtDate(ofxHeader.dtAsOf)}</span>}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   <div className="flex items-center justify-between mb-3">
                     <p className="text-sm text-slate-600">
                       <span className="font-semibold text-slate-900">{transactions.length}</span> transações em{' '}
