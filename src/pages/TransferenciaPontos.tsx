@@ -724,25 +724,23 @@ export default function TransferenciaPontos() {
       message: 'Excluir esta transferência reverterá as alterações no estoque (origem e destino). Se os pontos do destino já foram vendidos, a reversão será parcial. Deseja continuar?',
       onConfirm: async () => {
         try {
-          // Reverter estoque e contas_receber
-          // Admin usa wrapper que seta app.is_admin na mesma transação (transaction-local)
-          const rpcName = (isAdmin && usuario)
-            ? 'admin_reverter_transferencia_pontos'
-            : 'reverter_transferencia_pontos';
-          const rpcParams = (isAdmin && usuario)
-            ? { p_transfer_id: id, p_usuario_id: usuario.id }
-            : { p_transfer_id: id };
-
-          const { data: revertResult, error: revertError } = await supabase.rpc(rpcName, rpcParams);
-
-          if (revertError) throw new Error(`Erro ao reverter estoque: ${revertError.message}`);
-
-          // 3. Deletar o registro
-          const { error } = await supabase
-            .from('transferencia_pontos')
-            .delete()
-            .eq('id', id);
-          if (error) throw error;
+          if (isAdmin && usuario) {
+            // Admin: uma única chamada RPC faz tudo na mesma transação
+            // (set_config + delete contas_receber + delete transfer com trigger bypass)
+            const { error: rpcError } = await supabase.rpc(
+              'admin_delete_transferencia_pontos',
+              { p_transfer_id: id, p_usuario_id: usuario.id }
+            );
+            if (rpcError) throw new Error(rpcError.message);
+          } else {
+            // Não-admin: reverter estoque manualmente, depois deletar
+            const { error: revertError } = await supabase.rpc(
+              'reverter_transferencia_pontos', { p_transfer_id: id }
+            );
+            if (revertError) throw new Error(`Erro ao reverter estoque: ${revertError.message}`);
+            const { error } = await supabase.from('transferencia_pontos').delete().eq('id', id);
+            if (error) throw error;
+          }
 
           await supabase.from('logs').insert({
             usuario_id: usuario?.id,
@@ -755,14 +753,11 @@ export default function TransferenciaPontos() {
 
           fetchData();
 
-          const warnings: string[] = revertResult?.warnings || [];
-          const mensagem = warnings.length > 0
-            ? `Transferência excluída. Aviso de reversão parcial:\n${warnings.join('\n')}`
-            : 'Transferência excluída e estoque revertido com sucesso!';
+          const mensagem = 'Transferência excluída e estoque revertido com sucesso!';
 
           setDialogConfig({
             isOpen: true,
-            type: warnings.length > 0 ? 'warning' : 'success',
+            type: 'success',
             title: 'Sucesso',
             message: mensagem
           });
