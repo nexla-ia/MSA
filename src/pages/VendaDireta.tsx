@@ -91,11 +91,11 @@ export default function VendaDireta() {
     setLoading(false);
   };
 
-  const openNew = () => {
+  const openNew = (venda?: VendaRef) => {
     setEditing(null);
-    setForm(emptyForm);
-    setOcBusca('');
-    setVendaBuscada(null);
+    setForm({ ...emptyForm, venda_id: venda?.id || '' });
+    setOcBusca(venda?.ordem_compra || '');
+    setVendaBuscada(venda || null);
     setModalOpen(true);
   };
   const openEdit = (e: Emissao) => {
@@ -220,6 +220,39 @@ export default function VendaDireta() {
       <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
         <Construction className="w-5 h-5 text-amber-500 shrink-0" />
         <p className="text-sm text-amber-700 font-medium">Esta tela está em desenvolvimento. Funcionalidades podem estar incompletas.</p>
+      </div>
+
+      {/* Busca por Pedido de Compra */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Pedido de Compra</p>
+        <div className="flex gap-2">
+          <input
+            value={ocBusca}
+            onChange={e => { setOcBusca(e.target.value); if (!e.target.value) { setVendaBuscada(null); setForm(f => ({ ...f, venda_id: '' })); } }}
+            onKeyDown={e => e.key === 'Enter' && buscarVenda()}
+            placeholder="Digite o OC da venda e pressione Enter ou clique Buscar..."
+            className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+          />
+          <button onClick={buscarVenda} disabled={buscandoVenda || !ocBusca.trim()}
+            className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm font-medium">
+            {buscandoVenda ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+            Buscar
+          </button>
+        </div>
+        {vendaBuscada && (
+          <div className="mt-3 flex items-center justify-between gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-blue-800">{vendaBuscada.ordem_compra}</p>
+              <p className="text-xs text-blue-600 mt-0.5">
+                {vendaBuscada.clientes?.nome_cliente || '—'} · {vendaBuscada.programas_fidelidade?.nome || '—'} · {vendaBuscada.quantidade_milhas.toLocaleString('pt-BR')} milhas
+              </p>
+            </div>
+            <button onClick={() => openNew(vendaBuscada)}
+              className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-semibold shrink-0">
+              <Plus className="w-4 h-4" /> Emitir
+            </button>
+          </div>
+        )}
       </div>
 
       {/* KPIs */}
