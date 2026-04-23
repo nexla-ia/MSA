@@ -18,6 +18,7 @@ type ConciliacaoItem = {
   tipo: 'credito' | 'debito';
   lancamento_id: string | null;
   venda_id: string | null;
+  centro_custo_id: string | null;
   status: 'conciliado' | 'pendente' | 'divergente';
   observacao: string | null;
   conta_bancaria?: { nome_banco: string } | null;
@@ -28,6 +29,7 @@ type ConciliacaoItem = {
 type ContaBancaria = { id: string; nome_banco: string };
 type Lancamento = { id: string; descricao: string; valor: number; tipo: string; data_lancamento: string };
 type Venda = { id: string; ordem_compra: string | null; valor_total: number; data_venda: string; clientes: { nome_cliente: string } | null; parceiros: { nome_parceiro: string } | null };
+type CentroCusto = { id: string; nome: string };
 
 const MES_FULL = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 const fmtBRL = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -57,6 +59,7 @@ export default function ConciliacaoBancaria() {
   const [contas, setContas] = useState<ContaBancaria[]>([]);
   const [lancamentos, setLancamentos] = useState<Lancamento[]>([]);
   const [vendas, setVendas] = useState<Venda[]>([]);
+  const [centrosCusto, setCentrosCusto] = useState<CentroCusto[]>([]);
   const [loading, setLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [vinculoOpen, setVinculoOpen] = useState(false);
@@ -76,9 +79,13 @@ export default function ConciliacaoBancaria() {
   }>({ isOpen: false, type: 'info', title: '', message: '' });
 
   const loadContas = useCallback(async () => {
-    const { data } = await supabase.from('contas_bancarias').select('id, nome_banco').order('nome_banco');
-    setContas(data || []);
-    if (data && data.length > 0 && !contaSel) setContaSel(data[0].id);
+    const [{ data: contas }, { data: cc }] = await Promise.all([
+      supabase.from('contas_bancarias').select('id, nome_banco').order('nome_banco'),
+      supabase.from('centro_custos').select('id, nome').order('nome'),
+    ]);
+    setContas(contas || []);
+    setCentrosCusto(cc || []);
+    if (contas && contas.length > 0 && !contaSel) setContaSel(contas[0].id);
   }, [contaSel]);
 
   const loadData = useCallback(async () => {
@@ -94,7 +101,7 @@ export default function ConciliacaoBancaria() {
 
     const [concRes, lancRes, vendasRes] = await Promise.all([
       supabase.from('conciliacao_bancaria')
-        .select('*, conta_bancaria:contas_bancarias(nome_banco), lancamento:lancamentos_financeiros(descricao,valor), venda:vendas(ordem_compra,valor_total,clientes(nome_cliente),parceiros(nome_parceiro))')
+        .select('*, conta_bancaria:contas_bancarias(nome_banco), lancamento:lancamentos_financeiros(descricao,valor), venda:vendas(ordem_compra,valor_total,clientes(nome_cliente),parceiros(nome_parceiro)), centro_custo:centro_custos(nome)')
         .eq('conta_bancaria_id', contaSel)
         .gte('data_extrato', inicio)
         .lte('data_extrato', fim)
@@ -198,6 +205,13 @@ export default function ConciliacaoBancaria() {
     if (item.venda_id)
       await supabase.from('vendas').update({ conciliado: false }).eq('id', item.venda_id);
     loadData();
+  };
+
+  const handleUpdateField = async (id: string, field: string, value: string | null) => {
+    await supabase.from('conciliacao_bancaria')
+      .update({ [field]: value || null, updated_at: new Date().toISOString() })
+      .eq('id', id);
+    setItems(prev => prev.map(i => i.id === id ? { ...i, [field]: value || null } : i));
   };
 
   const handleDelete = (item: ConciliacaoItem) => {
@@ -316,7 +330,7 @@ export default function ConciliacaoBancaria() {
               <table className="w-full text-sm">
                 <thead className="border-b border-slate-100 bg-slate-50">
                   <tr>
-                    {['Data', 'Descrição', 'Tipo', 'Valor', 'Lançamento Vinculado', 'Status', 'Ações'].map(h => (
+                    {['Data', 'Descrição', 'Tipo', 'Valor', 'Lançamento Vinculado', 'Centro de Custo', 'Obs.', 'Status', 'Ações'].map(h => (
                       <th key={h} className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide">{h}</th>
                     ))}
                   </tr>
@@ -351,6 +365,27 @@ export default function ConciliacaoBancaria() {
                           ) : (
                             <span className="text-slate-300">Não vinculado</span>
                           )}
+                        </td>
+                        <td className="px-2 py-2 min-w-[140px]">
+                          <select
+                            value={item.centro_custo_id || ''}
+                            onChange={e => handleUpdateField(item.id, 'centro_custo_id', e.target.value)}
+                            className="w-full px-2 py-1 text-xs border border-slate-200 rounded-lg bg-white focus:ring-1 focus:ring-blue-400 focus:outline-none text-slate-700"
+                          >
+                            <option value="">—</option>
+                            {centrosCusto.map(cc => (
+                              <option key={cc.id} value={cc.id}>{cc.nome}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="px-2 py-2 min-w-[140px]">
+                          <input
+                            type="text"
+                            defaultValue={item.observacao || ''}
+                            onBlur={e => handleUpdateField(item.id, 'observacao', e.target.value)}
+                            placeholder="Observação..."
+                            className="w-full px-2 py-1 text-xs border border-slate-200 rounded-lg focus:ring-1 focus:ring-blue-400 focus:outline-none text-slate-700 placeholder-slate-300"
+                          />
                         </td>
                         <td className="px-4 py-3">
                           <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${st.color}`}>
