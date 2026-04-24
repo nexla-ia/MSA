@@ -188,25 +188,10 @@ export default function Estoque() {
       transferencia_saida: 'Transferência - Saída',
       transferencia_pessoas_entrada: 'Transfer. Pessoas - Entrada',
       transferencia_pessoas_saida: 'Transfer. Pessoas - Saída',
-      estorno_transferencia: 'Estorno de Transferência',
     };
 
     const movimentacoesArray: Movimentacao[] = (movimentacoesData || []).map((mov: any) => {
-      const obs: string = mov.observacao || '';
-      // Registros de estorno: novo tipo 'estorno_transferencia' OU registros antigos
-      // que tinham tipo='transferencia_saida'/'transferencia_entrada' mas são na verdade estornos
-      const isEstornoCredito =
-        mov.tipo === 'estorno_transferencia' && obs.startsWith('Estorno: transferência para')
-        || (mov.tipo === 'transferencia_saida' && obs.startsWith('Estorno:'));
-      const isEstornoDebito =
-        mov.tipo === 'estorno_transferencia' && obs.startsWith('Estorno: transferência de')
-        || (mov.tipo === 'transferencia_entrada' && obs.startsWith('Estorno:'));
-
-      let tipoFormatado: string;
-      if (isEstornoCredito) tipoFormatado = 'Estorno - Crédito';
-      else if (isEstornoDebito) tipoFormatado = 'Estorno - Débito';
-      else tipoFormatado = tipoMap[mov.tipo] || mov.tipo;
-
+      const tipoFormatado = tipoMap[mov.tipo] || mov.tipo;
       const localizador = mov.referencia_tabela === 'vendas' && mov.referencia_id
         ? localizadorMap[mov.referencia_id]
         : undefined;
@@ -414,8 +399,8 @@ export default function Estoque() {
                   </tr>
                 ) : (
                   movimentacoesFiltradas.map((mov) => {
-                    const isEntrada = mov.tipo === 'Entrada' || mov.tipo === 'Crédito Clube' || mov.tipo === 'Crédito' || mov.tipo.includes('Entrada') || mov.tipo === 'Estorno - Crédito';
-                    const isSaida = mov.tipo === 'Saída' || (mov.tipo.includes('Saída') && mov.tipo !== 'Estorno - Crédito') || mov.tipo === 'Estorno - Débito';
+                    const isEntrada = mov.tipo === 'Entrada' || mov.tipo === 'Crédito Clube' || mov.tipo === 'Crédito' || mov.tipo.includes('Entrada');
+                    const isSaida = mov.tipo === 'Saída' || mov.tipo.includes('Saída');
                     const isVenda = isSaida && mov.localizador;
                     const isCarrinho = mov.tipo === 'Entrada' && mov.observacao === 'Compra no Carrinho';
                     const tipoLabel = isCarrinho ? 'Entrada - Compra Carrinho' : mov.tipo;
@@ -434,7 +419,6 @@ export default function Estoque() {
                         <td className="px-4 py-3 whitespace-nowrap text-sm">
                           <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                             isCarrinho ? 'bg-orange-100 text-orange-700'
-                            : mov.tipo === 'Estorno - Crédito' || mov.tipo === 'Estorno - Débito' ? 'bg-purple-100 text-purple-700'
                             : isEntrada ? 'bg-green-100 text-green-700'
                             : isSaida ? 'bg-red-100 text-red-700'
                             : mov.tipo.includes('Transferência') || mov.tipo.includes('Transfer.')
