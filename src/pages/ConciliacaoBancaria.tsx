@@ -5,7 +5,7 @@ import Modal from '../components/Modal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import {
   PlusCircle, RefreshCw, CheckCircle2, Clock, AlertTriangle,
-  Building2, Search, Link2, Trash2, TrendingUp
+  Building2, Search, Link2, Trash2, TrendingUp, Sparkles
 } from 'lucide-react';
 import ImportarExtratoOFX from '../components/ImportarExtratoOFX';
 
@@ -236,6 +236,57 @@ export default function ConciliacaoBancaria() {
     setItems(prev => prev.map(i => i.id === id ? { ...i, [field]: value || null } : i));
   };
 
+  const conciliarAutomatico = async () => {
+    const pendentesCredito = items.filter(i => i.status === 'pendente' && i.tipo === 'credito');
+
+    if (pendentesCredito.length === 0) {
+      setDialog({ isOpen: true, type: 'info', title: 'Nada a conciliar', message: 'Não há créditos pendentes para conciliar.' });
+      return;
+    }
+
+    setLoading(true);
+    let conciliados = 0;
+    let multiplos = 0;
+    let semMatch = 0;
+    const vendasUsadas = new Set<string>();
+
+    for (const item of pendentesCredito) {
+      const matches = vendas.filter(v =>
+        !vendasUsadas.has(v.id) && Math.abs(v.valor_total - item.valor_extrato) < 0.01
+      );
+
+      if (matches.length === 1) {
+        const venda = matches[0];
+        const { error } = await supabase.from('conciliacao_bancaria').update({
+          venda_id: venda.id,
+          lancamento_id: null,
+          status: 'conciliado',
+          data_conciliacao: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }).eq('id', item.id);
+
+        if (!error) {
+          await supabase.from('vendas').update({ conciliado: true }).eq('id', venda.id);
+          vendasUsadas.add(venda.id);
+          conciliados++;
+        }
+      } else if (matches.length === 0) {
+        semMatch++;
+      } else {
+        multiplos++;
+      }
+    }
+
+    setLoading(false);
+    loadData();
+    setDialog({
+      isOpen: true,
+      type: conciliados > 0 ? 'success' : 'info',
+      title: 'Conciliação automática',
+      message: `${conciliados} conciliado(s) automaticamente. ${multiplos > 0 ? `${multiplos} com múltiplos matches (revisar manualmente). ` : ''}${semMatch} sem correspondência.`
+    });
+  };
+
   const handleDelete = (item: ConciliacaoItem) => {
     setDialog({
       isOpen: true, type: 'warning', title: 'Excluir',
@@ -336,6 +387,13 @@ export default function ConciliacaoBancaria() {
             <input value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar descrição..."
               className="flex-1 text-sm outline-none" />
           </div>
+          <button
+            onClick={conciliarAutomatico}
+            className="flex items-center gap-2 px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition-colors"
+            title="Concilia automaticamente créditos com vendas de mesmo valor"
+          >
+            <Sparkles className="w-4 h-4" /> Conciliar Auto
+          </button>
           <button onClick={loadData} className="p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
             <RefreshCw className="w-4 h-4" />
           </button>
