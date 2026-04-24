@@ -29,6 +29,15 @@ type ConciliacaoItem = {
 type ContaBancaria = { id: string; nome_banco: string };
 type Lancamento = { id: string; descricao: string; valor: number; tipo: string; data_lancamento: string };
 type Venda = { id: string; ordem_compra: string | null; valor_total: number; data_venda: string; clientes: { nome_cliente: string } | null; parceiros: { nome_parceiro: string } | null };
+type ContaReceber = {
+  id: string;
+  venda_id: string;
+  data_vencimento: string;
+  valor_parcela: number;
+  status_pagamento: string;
+  numero_parcela: number;
+  venda?: { ordem_compra: string | null; clientes: { nome_cliente: string } | null; parceiros: { nome_parceiro: string } | null } | null;
+};
 type CentroCusto = { id: string; nome: string };
 
 const MES_FULL = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
@@ -50,6 +59,7 @@ export default function ConciliacaoBancaria() {
   const [mesesPorBanco, setMesesPorBanco] = useState<Map<string, Set<string>>>(new Map());
   const [lancamentos, setLancamentos] = useState<Lancamento[]>([]);
   const [vendas, setVendas] = useState<Venda[]>([]);
+  const [contasReceber, setContasReceber] = useState<ContaReceber[]>([]);
   const [centrosCusto, setCentrosCusto] = useState<CentroCusto[]>([]);
   const [loading, setLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
@@ -118,7 +128,7 @@ export default function ConciliacaoBancaria() {
     const seisAtras = new Date(ano, m - 7, 1);
     const seisAtrasStr = `${seisAtras.getFullYear()}-${String(seisAtras.getMonth() + 1).padStart(2, '0')}-01`;
 
-    const [concRes, lancRes, vendasRes] = await Promise.all([
+    const [concRes, lancRes, vendasRes, crRes] = await Promise.all([
       supabase.from('conciliacao_bancaria')
         .select('*, conta_bancaria:contas_bancarias(nome_banco), lancamento:lancamentos_financeiros(descricao,valor), venda:vendas(ordem_compra,valor_total,clientes(nome_cliente),parceiros(nome_parceiro))')
         .eq('conta_bancaria_id', contaSel)
@@ -135,15 +145,22 @@ export default function ConciliacaoBancaria() {
         .select('id, ordem_compra, valor_total, data_venda, clientes(nome_cliente), parceiros(nome_parceiro)')
         .gte('data_venda', seisAtrasStr)
         .order('data_venda', { ascending: false }),
+      supabase.from('contas_receber')
+        .select('id, venda_id, data_vencimento, valor_parcela, status_pagamento, numero_parcela, venda:vendas(ordem_compra, clientes(nome_cliente), parceiros(nome_parceiro))')
+        .in('status_pagamento', ['pendente', 'atrasado'])
+        .gte('data_vencimento', seisAtrasStr)
+        .order('data_vencimento', { ascending: false }),
     ]);
 
     if (concRes.error) console.error('❌ Erro conciliacao:', concRes.error);
     if (lancRes.error) console.error('❌ Erro lancamentos:', lancRes.error);
     if (vendasRes.error) console.error('❌ Erro vendas:', vendasRes.error);
+    if (crRes.error) console.error('❌ Erro contas_receber:', crRes.error);
 
     setItems(concRes.data || []);
     setLancamentos(lancRes.data || []);
     setVendas((vendasRes.data || []) as Venda[]);
+    setContasReceber((crRes.data || []) as ContaReceber[]);
     setLoading(false);
   }, [contaSel, mesSel]);
 
@@ -246,12 +263,49 @@ export default function ConciliacaoBancaria() {
     }
 
     setLoading(true);
-    let conciliados = 0;
+    let conciliadosData = 0;     // match por valor + data (alta confiança)
+    let conciliadosValor = 0;    // match só por valor
     let multiplos = 0;
     let semMatch = 0;
+    const crUsadas = new Set<string>();
     const vendasUsadas = new Set<string>();
 
+    const diasEntre = (a: string, b: string) =>
+      Math.abs((new Date(a).getTime() - new Date(b).getTime()) / 86400000);
+
     for (const item of pendentesCredito) {
+      // 1ª tentativa: contas_receber com valor igual, ordenadas por proximidade de data
+      const crMatches = contasReceber
+        .filter(cr => !crUsadas.has(cr.id)
+          && Math.abs(Number(cr.valor_parcela) - item.valor_extrato) < 0.01)
+        .map(cr => ({ cr, dias: diasEntre(cr.data_vencimento, item.data_extrato) }))
+        .sort((a, b) => a.dias - b.dias);
+
+      // Match forte: mesmo valor e vencimento dentro de 7 dias do crédito
+      const matchForte = crMatches.find(m => m.dias <= 7);
+      if (matchForte) {
+        const { cr } = matchForte;
+        const { error } = await supabase.from('conciliacao_bancaria').update({
+          venda_id: cr.venda_id,
+          lancamento_id: null,
+          status: 'conciliado',
+          data_conciliacao: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }).eq('id', item.id);
+
+        if (!error) {
+          await supabase.from('contas_receber').update({
+            status_pagamento: 'pago',
+            data_pagamento: item.data_extrato,
+            valor_pago: item.valor_extrato,
+          }).eq('id', cr.id);
+          crUsadas.add(cr.id);
+          conciliadosData++;
+          continue;
+        }
+      }
+
+      // 2ª tentativa: fallback por valor apenas (vendas)
       const matches = vendas.filter(v =>
         !vendasUsadas.has(v.id) && Math.abs(v.valor_total - item.valor_extrato) < 0.01
       );
@@ -269,7 +323,7 @@ export default function ConciliacaoBancaria() {
         if (!error) {
           await supabase.from('vendas').update({ conciliado: true }).eq('id', venda.id);
           vendasUsadas.add(venda.id);
-          conciliados++;
+          conciliadosValor++;
         }
       } else if (matches.length === 0) {
         semMatch++;
@@ -280,11 +334,17 @@ export default function ConciliacaoBancaria() {
 
     setLoading(false);
     loadData();
+    const total = conciliadosData + conciliadosValor;
     setDialog({
       isOpen: true,
-      type: conciliados > 0 ? 'success' : 'info',
+      type: total > 0 ? 'success' : 'info',
       title: 'Conciliação automática',
-      message: `${conciliados} conciliado(s) automaticamente. ${multiplos > 0 ? `${multiplos} com múltiplos matches (revisar manualmente). ` : ''}${semMatch} sem correspondência.`
+      message:
+        `${total} conciliado(s) automaticamente.\n` +
+        `  • ${conciliadosData} por valor + vencimento (alta confiança)\n` +
+        `  • ${conciliadosValor} só por valor\n` +
+        (multiplos > 0 ? `${multiplos} com múltiplos matches — revisar manualmente.\n` : '') +
+        `${semMatch} sem correspondência.`
     });
   };
 
@@ -440,35 +500,37 @@ export default function ConciliacaoBancaria() {
               </div>
               <div className="text-left">
                 <p className="text-sm font-semibold text-slate-800">
-                  {vendas.length} vendas disponíveis para conciliar
+                  {vendas.length} vendas · {contasReceber.length} parcelas a receber
                 </p>
                 <p className="text-xs text-slate-500">
-                  Total: <span className="font-semibold text-emerald-600">{fmtBRL(vendas.reduce((s, v) => s + Number(v.valor_total), 0))}</span>
-                  <span className="ml-2 text-slate-400">· últimos 6 meses · não conciliadas</span>
+                  Parcelas pendentes: <span className="font-semibold text-emerald-600">{fmtBRL(contasReceber.reduce((s, cr) => s + Number(cr.valor_parcela), 0))}</span>
+                  <span className="ml-2 text-slate-400">· últimos 6 meses</span>
                 </p>
               </div>
             </div>
             <span className="text-xs text-slate-400">{vendasOpen ? '▲ ocultar' : '▼ ver vendas'}</span>
           </button>
 
-          {vendasOpen && vendas.length > 0 && (
-            <div className="border-t border-emerald-100 max-h-64 overflow-y-auto">
+          {vendasOpen && contasReceber.length > 0 && (
+            <div className="border-t border-emerald-100 max-h-72 overflow-y-auto">
               <table className="w-full text-xs">
                 <thead className="bg-slate-50 sticky top-0">
                   <tr>
-                    <th className="px-4 py-2 text-left font-medium text-slate-500 uppercase tracking-wide">Data</th>
+                    <th className="px-4 py-2 text-left font-medium text-slate-500 uppercase tracking-wide">Vencimento</th>
                     <th className="px-4 py-2 text-left font-medium text-slate-500 uppercase tracking-wide">OC</th>
                     <th className="px-4 py-2 text-left font-medium text-slate-500 uppercase tracking-wide">Cliente/Parceiro</th>
+                    <th className="px-4 py-2 text-center font-medium text-slate-500 uppercase tracking-wide">Parcela</th>
                     <th className="px-4 py-2 text-right font-medium text-slate-500 uppercase tracking-wide">Valor</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {[...vendas].sort((a, b) => b.data_venda.localeCompare(a.data_venda)).map(v => (
-                    <tr key={v.id} className="border-b border-slate-50 hover:bg-emerald-50">
-                      <td className="px-4 py-2 text-slate-500 whitespace-nowrap">{formatDate(v.data_venda)}</td>
-                      <td className="px-4 py-2 text-emerald-700 font-semibold whitespace-nowrap">{v.ordem_compra || '—'}</td>
-                      <td className="px-4 py-2 text-slate-600 truncate max-w-[260px]">{v.clientes?.nome_cliente || v.parceiros?.nome_parceiro || '—'}</td>
-                      <td className="px-4 py-2 text-right font-bold text-slate-800 whitespace-nowrap">{fmtBRL(Number(v.valor_total))}</td>
+                  {[...contasReceber].sort((a, b) => b.data_vencimento.localeCompare(a.data_vencimento)).map(cr => (
+                    <tr key={cr.id} className="border-b border-slate-50 hover:bg-emerald-50">
+                      <td className="px-4 py-2 text-slate-500 whitespace-nowrap">{formatDate(cr.data_vencimento)}</td>
+                      <td className="px-4 py-2 text-emerald-700 font-semibold whitespace-nowrap">{cr.venda?.ordem_compra || '—'}</td>
+                      <td className="px-4 py-2 text-slate-600 truncate max-w-[260px]">{cr.venda?.clientes?.nome_cliente || cr.venda?.parceiros?.nome_parceiro || '—'}</td>
+                      <td className="px-4 py-2 text-center text-slate-500">{cr.numero_parcela}</td>
+                      <td className="px-4 py-2 text-right font-bold text-slate-800 whitespace-nowrap">{fmtBRL(Number(cr.valor_parcela))}</td>
                     </tr>
                   ))}
                 </tbody>
