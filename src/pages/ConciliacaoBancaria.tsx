@@ -57,6 +57,7 @@ export default function ConciliacaoBancaria() {
   const [vinculoItem, setVinculoItem] = useState<ConciliacaoItem | null>(null);
   const [busca, setBusca] = useState('');
   const [filtroStatus, setFiltroStatus] = useState<'todos' | 'pendente' | 'conciliado' | 'divergente'>('todos');
+  const [vendasOpen, setVendasOpen] = useState(false);
   const [form, setForm] = useState({
     data_extrato: new Date().toISOString().split('T')[0],
     descricao_extrato: '',
@@ -107,7 +108,7 @@ export default function ConciliacaoBancaria() {
   }, [contaSel]);
 
   const loadData = useCallback(async () => {
-    if (!contaSel) return;
+    if (!contaSel || !mesSel) return;
     setLoading(true);
     const [ano, m] = mesSel.split('-').map(Number);
     const inicio = `${mesSel}-01`;
@@ -425,6 +426,55 @@ export default function ConciliacaoBancaria() {
               {taxaConciliacao.toFixed(1).replace('.', ',')}%
             </p>
           </div>
+        </div>
+
+        {/* Vendas disponíveis para conciliar */}
+        <div className="bg-white rounded-xl border border-emerald-100 shadow-sm overflow-hidden">
+          <button
+            onClick={() => setVendasOpen(v => !v)}
+            className="w-full flex items-center justify-between px-5 py-3 hover:bg-emerald-50 transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <div className="bg-emerald-50 p-2 rounded-lg">
+                <Building2 className="w-4 h-4 text-emerald-600" />
+              </div>
+              <div className="text-left">
+                <p className="text-sm font-semibold text-slate-800">
+                  {vendas.length} vendas disponíveis para conciliar
+                </p>
+                <p className="text-xs text-slate-500">
+                  Total: <span className="font-semibold text-emerald-600">{fmtBRL(vendas.reduce((s, v) => s + Number(v.valor_total), 0))}</span>
+                  <span className="ml-2 text-slate-400">· últimos 6 meses · não conciliadas</span>
+                </p>
+              </div>
+            </div>
+            <span className="text-xs text-slate-400">{vendasOpen ? '▲ ocultar' : '▼ ver vendas'}</span>
+          </button>
+
+          {vendasOpen && vendas.length > 0 && (
+            <div className="border-t border-emerald-100 max-h-64 overflow-y-auto">
+              <table className="w-full text-xs">
+                <thead className="bg-slate-50 sticky top-0">
+                  <tr>
+                    <th className="px-4 py-2 text-left font-medium text-slate-500 uppercase tracking-wide">Data</th>
+                    <th className="px-4 py-2 text-left font-medium text-slate-500 uppercase tracking-wide">OC</th>
+                    <th className="px-4 py-2 text-left font-medium text-slate-500 uppercase tracking-wide">Cliente/Parceiro</th>
+                    <th className="px-4 py-2 text-right font-medium text-slate-500 uppercase tracking-wide">Valor</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[...vendas].sort((a, b) => b.data_venda.localeCompare(a.data_venda)).map(v => (
+                    <tr key={v.id} className="border-b border-slate-50 hover:bg-emerald-50">
+                      <td className="px-4 py-2 text-slate-500 whitespace-nowrap">{formatDate(v.data_venda)}</td>
+                      <td className="px-4 py-2 text-emerald-700 font-semibold whitespace-nowrap">{v.ordem_compra || '—'}</td>
+                      <td className="px-4 py-2 text-slate-600 truncate max-w-[260px]">{v.clientes?.nome_cliente || v.parceiros?.nome_parceiro || '—'}</td>
+                      <td className="px-4 py-2 text-right font-bold text-slate-800 whitespace-nowrap">{fmtBRL(Number(v.valor_total))}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
         {/* Tabela */}
