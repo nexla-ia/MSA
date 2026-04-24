@@ -721,26 +721,15 @@ export default function TransferenciaPontos() {
       isOpen: true,
       type: 'confirm',
       title: 'Confirmar Exclusão',
-      message: 'Excluir esta transferência reverterá as alterações no estoque (origem e destino). Se os pontos do destino já foram vendidos, a reversão será parcial. Deseja continuar?',
+      message: 'Excluir esta transferência removerá completamente todos os registros (estoque, histórico e financeiro). Esta ação não pode ser desfeita. Deseja continuar?',
       onConfirm: async () => {
         try {
-          if (isAdmin && usuario) {
-            // Admin: uma única chamada RPC faz tudo na mesma transação
-            // (set_config + delete contas_receber + delete transfer com trigger bypass)
-            const { error: rpcError } = await supabase.rpc(
-              'admin_delete_transferencia_pontos',
-              { p_transfer_id: id, p_usuario_id: usuario.id }
-            );
-            if (rpcError) throw new Error(rpcError.message);
-          } else {
-            // Não-admin: reverter estoque manualmente, depois deletar
-            const { error: revertError } = await supabase.rpc(
-              'reverter_transferencia_pontos', { p_transfer_id: id }
-            );
-            if (revertError) throw new Error(`Erro ao reverter estoque: ${revertError.message}`);
-            const { error } = await supabase.from('transferencia_pontos').delete().eq('id', id);
-            if (error) throw error;
-          }
+          // Hard delete: reverte pontos + apaga histórico + apaga transferência
+          const { error: rpcError } = await supabase.rpc(
+            'excluir_transferencia_hard',
+            { p_transfer_id: id }
+          );
+          if (rpcError) throw new Error(rpcError.message);
 
           await supabase.from('logs').insert({
             usuario_id: usuario?.id,
