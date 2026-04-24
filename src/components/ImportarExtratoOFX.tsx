@@ -164,34 +164,33 @@ export default function ImportarExtratoOFX({ contaBancariaId, contaBancariaNome,
 
   const confirmar = async () => {
     setLoading(true);
-    let inseridos = 0;
-    let duplicatas = 0;
+    setWarnings([]);
 
-    for (const t of transactions) {
-      // Verifica duplicata pelo fitid + conta
-      const { data: existente } = await supabase
-        .from('conciliacao_bancaria')
-        .select('id')
-        .eq('fitid', t.fitid)
-        .eq('conta_bancaria_id', contaBancariaId)
-        .maybeSingle();
+    const records = transactions.map(t => ({
+      conta_bancaria_id: contaBancariaId,
+      data_extrato:      t.date,
+      descricao_extrato: t.description,
+      valor_extrato:     t.amount,
+      tipo:              t.tipo,
+      status:            'pendente',
+      fitid:             t.fitid,
+      updated_at:        new Date().toISOString(),
+    }));
 
-      if (existente) { duplicatas++; continue; }
+    // Bulk upsert — ignora duplicatas via unique index (fitid + conta_bancaria_id)
+    const { data, error } = await supabase
+      .from('conciliacao_bancaria')
+      .upsert(records, { ignoreDuplicates: true })
+      .select('id');
 
-      const { error } = await supabase.from('conciliacao_bancaria').insert({
-        conta_bancaria_id:  contaBancariaId,
-        data_extrato:       t.date,
-        descricao_extrato:  t.description,
-        valor_extrato:      t.amount,
-        tipo:               t.tipo,
-        status:             'pendente',
-        fitid:              t.fitid,
-        updated_at:         new Date().toISOString(),
-      });
-
-      if (error) { setWarnings(w => [...w, `Erro ao salvar "${t.description}": ${error.message}`]); }
-      else inseridos++;
+    if (error) {
+      setWarnings([`Erro ao importar: ${error.message}`]);
+      setLoading(false);
+      return;
     }
+
+    const inseridos  = data?.length ?? 0;
+    const duplicatas = transactions.length - inseridos;
 
     setImportResult({ inseridos, duplicatas });
     setLoading(false);
@@ -395,8 +394,12 @@ export default function ImportarExtratoOFX({ contaBancariaId, contaBancariaNome,
                     disabled={loading}
                     className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-sm font-medium px-5 py-2 rounded-lg transition-colors"
                   >
-                    {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-                    Confirmar Importação
+                    {loading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Importando {transactions.length} transações…
+                      </>
+                    ) : 'Confirmar Importação'}
                   </button>
                 </>
               )}
