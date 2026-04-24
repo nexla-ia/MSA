@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Upload, FileText, CheckCircle, AlertTriangle, X, Loader2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
@@ -131,7 +131,18 @@ export default function ImportarExtratoOFX({ contaBancariaId, contaBancariaNome,
   const [loading, setLoading]     = useState(false);
   const [ofxHeader, setOfxHeader] = useState<OFXHeader | null>(null);
   const [importResult, setImportResult] = useState<{ inseridos: number; duplicatas: number }>({ inseridos: 0, duplicatas: 0 });
+  const [contas, setContas] = useState<{ id: string; nome_banco: string }[]>([]);
+  const [contaSel, setContaSel] = useState(contaBancariaId);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    supabase.from('contas_bancarias').select('id, nome_banco').order('nome_banco')
+      .then(({ data }) => setContas(data || []));
+  }, []);
+
+  useEffect(() => {
+    setContaSel(contaBancariaId);
+  }, [contaBancariaId]);
 
   const processFile = (file: File) => {
     if (!file.name.toLowerCase().endsWith('.ofx')) {
@@ -170,7 +181,7 @@ export default function ImportarExtratoOFX({ contaBancariaId, contaBancariaNome,
     const { data: existing } = await supabase
       .from('conciliacao_bancaria')
       .select('fitid')
-      .eq('conta_bancaria_id', contaBancariaId)
+      .eq('conta_bancaria_id', contaSel)
       .in('fitid', transactions.map(t => t.fitid));
 
     const existingFitids = new Set((existing || []).map((e: any) => e.fitid));
@@ -191,7 +202,7 @@ export default function ImportarExtratoOFX({ contaBancariaId, contaBancariaNome,
       descricao:        t.description,
       valor:            t.amount,
       tipo:             t.tipo === 'credito' ? 'entrada' : 'saida',
-      conta_bancaria_id: contaBancariaId,
+      conta_bancaria_id: contaSel,
       conciliado:       false,
       observacao:       `Importado OFX · ${t.trntype || t.tipo}`,
     }));
@@ -209,7 +220,7 @@ export default function ImportarExtratoOFX({ contaBancariaId, contaBancariaNome,
 
     // 3. Cria os registros de conciliação já vinculados aos lançamentos
     const concRecords = novas.map((t, i) => ({
-      conta_bancaria_id: contaBancariaId,
+      conta_bancaria_id: contaSel,
       data_extrato:      t.date,
       descricao_extrato: t.description,
       valor_extrato:     t.amount,
@@ -264,11 +275,22 @@ export default function ImportarExtratoOFX({ contaBancariaId, contaBancariaNome,
 
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
-              <div>
+              <div className="flex-1 min-w-0">
                 <h2 className="text-lg font-semibold text-slate-900">Importar Extrato OFX</h2>
-                <p className="text-sm text-slate-500">{contaBancariaNome} · {mesReferencia}</p>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-xs text-slate-500">Conta:</span>
+                  <select
+                    value={contaSel}
+                    onChange={e => setContaSel(e.target.value)}
+                    className="text-xs border border-slate-300 rounded-lg px-2 py-1 bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none text-slate-700 font-medium"
+                  >
+                    {contas.map(c => (
+                      <option key={c.id} value={c.id}>{c.nome_banco}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
-              <button onClick={fechar} className="text-slate-400 hover:text-slate-600 transition-colors">
+              <button onClick={fechar} className="text-slate-400 hover:text-slate-600 transition-colors ml-4">
                 <X className="w-5 h-5" />
               </button>
             </div>
