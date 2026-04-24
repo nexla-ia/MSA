@@ -330,25 +330,27 @@ export default function ConciliacaoBancaria() {
             <p className="text-xs text-slate-400 mt-0.5">{filtered.length} lançamentos</p>
           </div>
 
-          {loading ? (
-            <div className="p-6 space-y-3">{[...Array(5)].map((_, i) => <div key={i} className="h-12 bg-slate-50 rounded animate-pulse" />)}</div>
-          ) : filtered.length === 0 ? (
-            <div className="py-14 text-center">
-              <Building2 className="w-10 h-10 text-slate-200 mx-auto mb-2" />
-              <p className="text-slate-400 text-sm">Nenhum lançamento no extrato para este período</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="border-b border-slate-100 bg-slate-50">
-                  <tr>
-                    {['Data', 'Descrição', 'Tipo', 'Valor Extrato', 'Lançamento ERP', 'Valor ERP', 'Diferença', 'Centro de Custo', 'Obs.', 'Status', 'Ação'].map(h => (
-                      <th key={h} className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide whitespace-nowrap">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map(item => {
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="border-b border-slate-100 bg-slate-50">
+                <tr>
+                  {['Data', 'Descrição', 'Tipo', 'Valor Extrato', 'Lançamento ERP', 'Valor ERP', 'Diferença', 'Centro de Custo', 'Obs.', 'Status', 'Ação'].map(h => (
+                    <th key={h} className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide whitespace-nowrap">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? (
+                  <tr><td colSpan={11} className="p-6">
+                    <div className="space-y-3">{[...Array(5)].map((_, i) => <div key={i} className="h-8 bg-slate-50 rounded animate-pulse" />)}</div>
+                  </td></tr>
+                ) : filtered.length === 0 ? (
+                  <tr><td colSpan={11} className="py-14 text-center">
+                    <Building2 className="w-10 h-10 text-slate-200 mx-auto mb-2" />
+                    <p className="text-slate-400 text-sm">Nenhum lançamento no extrato para este período</p>
+                  </td></tr>
+                ) : (
+                  filtered.map(item => {
                     const st = STATUS_MAP[item.status];
                     const valorERP = item.lancamento?.valor ?? item.venda?.valor_total ?? null;
                     const diferenca = valorERP !== null ? item.valor_extrato - valorERP : null;
@@ -446,11 +448,11 @@ export default function ConciliacaoBancaria() {
                         </td>
                       </tr>
                     );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 
