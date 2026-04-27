@@ -18,7 +18,7 @@ type ConciliacaoItem = {
   tipo: 'credito' | 'debito';
   lancamento_id: string | null;
   venda_id: string | null;
-  centro_custo_id: string | null;
+  classificacao_contabil_id: string | null;
   status: 'conciliado' | 'pendente' | 'divergente';
   observacao: string | null;
   conta_bancaria?: { nome_banco: string } | null;
@@ -38,7 +38,7 @@ type ContaReceber = {
   numero_parcela: number;
   venda?: { ordem_compra: string | null; clientes: { nome_cliente: string } | null; parceiros: { nome_parceiro: string } | null } | null;
 };
-type CentroCusto = { id: string; nome: string };
+type ClassificacaoContabil = { id: string; classificacao: string; descricao?: string };
 
 const MES_FULL = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 const fmtBRL = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -60,7 +60,7 @@ export default function ConciliacaoBancaria() {
   const [lancamentos, setLancamentos] = useState<Lancamento[]>([]);
   const [vendas, setVendas] = useState<Venda[]>([]);
   const [contasReceber, setContasReceber] = useState<ContaReceber[]>([]);
-  const [centrosCusto, setCentrosCusto] = useState<CentroCusto[]>([]);
+  const [classificacoes, setClassificacoes] = useState<ClassificacaoContabil[]>([]);
   const [loading, setLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [vinculoOpen, setVinculoOpen] = useState(false);
@@ -83,11 +83,11 @@ export default function ConciliacaoBancaria() {
   const loadContas = useCallback(async () => {
     const [{ data: contas }, { data: cc }, { data: conciliacoes }] = await Promise.all([
       supabase.from('contas_bancarias').select('id, nome_banco').order('nome_banco'),
-      supabase.from('centro_custos').select('id, nome').order('nome'),
+      supabase.from('classificacao_contabil').select('id, classificacao, descricao').order('classificacao'),
       supabase.from('conciliacao_bancaria').select('conta_bancaria_id, data_extrato'),
     ]);
     setContas(contas || []);
-    setCentrosCusto(cc || []);
+    setClassificacoes(cc || []);
 
     // Descobre bancos e meses que têm dados
     const bancos = new Set<string>();
@@ -546,7 +546,7 @@ export default function ConciliacaoBancaria() {
             <table className="w-full text-sm">
               <thead className="border-b border-slate-100 bg-slate-50">
                 <tr>
-                  {['Data', 'Descrição', 'Tipo', 'Valor Extrato', 'Lançamento ERP', 'Valor ERP', 'Diferença', 'Centro de Custo', 'Obs.', 'Status', 'Ação'].map(h => (
+                  {['Data', 'Descrição', 'Tipo', 'Valor Extrato', 'Lançamento ERP', 'Valor ERP', 'Diferença', 'Classificação Contábil', 'Obs.', 'Status', 'Ação'].map(h => (
                     <th key={h} className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wide whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -600,15 +600,15 @@ export default function ConciliacaoBancaria() {
                               : <span className="text-red-500">{fmtBRL(Math.abs(diferenca))}</span>
                           ) : <span className="text-slate-300">—</span>}
                         </td>
-                        <td className="px-2 py-2 min-w-[130px]">
+                        <td className="px-2 py-2 min-w-[160px]">
                           <select
-                            value={item.centro_custo_id || ''}
-                            onChange={e => handleUpdateField(item.id, 'centro_custo_id', e.target.value)}
+                            value={item.classificacao_contabil_id || ''}
+                            onChange={e => handleUpdateField(item.id, 'classificacao_contabil_id', e.target.value)}
                             className="w-full px-2 py-1 text-xs border border-slate-200 rounded-lg bg-white focus:ring-1 focus:ring-blue-400 focus:outline-none text-slate-700"
                           >
                             <option value="">—</option>
-                            {centrosCusto.map(cc => (
-                              <option key={cc.id} value={cc.id}>{cc.nome}</option>
+                            {classificacoes.map(cc => (
+                              <option key={cc.id} value={cc.id}>{cc.classificacao}</option>
                             ))}
                           </select>
                         </td>
