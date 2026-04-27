@@ -18,6 +18,8 @@ type ConciliacaoItem = {
   tipo: 'credito' | 'debito';
   lancamento_id: string | null;
   venda_id: string | null;
+  compra_id: string | null;
+  conta_pagar_id: string | null;
   classificacao_contabil_id: string | null;
   status: 'conciliado' | 'pendente' | 'divergente';
   observacao: string | null;
@@ -37,6 +39,23 @@ type ContaReceber = {
   status_pagamento: string;
   numero_parcela: number;
   venda?: { ordem_compra: string | null; clientes: { nome_cliente: string } | null; parceiros: { nome_parceiro: string } | null } | null;
+};
+type Compra = {
+  id: string;
+  data_entrada: string | null;
+  valor_total: number;
+  pontos_milhas: number;
+  parceiros: { nome_parceiro: string } | null;
+  programas_fidelidade: { nome: string } | null;
+};
+type ContaPagar = {
+  id: string;
+  data_vencimento: string;
+  valor_parcela: number;
+  status_pagamento: string;
+  numero_parcela: number;
+  descricao: string | null;
+  origem_tipo: string | null;
 };
 type ClassificacaoContabil = { id: string; classificacao: string; descricao?: string };
 
@@ -60,6 +79,8 @@ export default function ConciliacaoBancaria() {
   const [lancamentos, setLancamentos] = useState<Lancamento[]>([]);
   const [vendas, setVendas] = useState<Venda[]>([]);
   const [contasReceber, setContasReceber] = useState<ContaReceber[]>([]);
+  const [compras, setCompras] = useState<Compra[]>([]);
+  const [contasPagar, setContasPagar] = useState<ContaPagar[]>([]);
   const [classificacoes, setClassificacoes] = useState<ClassificacaoContabil[]>([]);
   const [loading, setLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
@@ -152,15 +173,33 @@ export default function ConciliacaoBancaria() {
         .order('data_vencimento', { ascending: false }),
     ]);
 
+    const [comprasRes, capRes] = await Promise.all([
+      supabase.from('compras')
+        .select('id, data_entrada, valor_total, pontos_milhas, parceiros(nome_parceiro), programas_fidelidade(nome)')
+        .eq('status', 'Concluído')
+        .gte('data_entrada', seisAtrasStr)
+        .order('data_entrada', { ascending: false }),
+      supabase.from('contas_a_pagar')
+        .select('id, data_vencimento, valor_parcela, status_pagamento, numero_parcela, descricao, origem_tipo')
+        .in('status_pagamento', ['pendente', 'atrasado'])
+        .gte('data_vencimento', seisAtrasStr)
+        .order('data_vencimento', { ascending: false }),
+    ]);
+
     if (concRes.error) console.error('❌ Erro conciliacao:', concRes.error);
     if (lancRes.error) console.error('❌ Erro lancamentos:', lancRes.error);
     if (vendasRes.error) console.error('❌ Erro vendas:', vendasRes.error);
     if (crRes.error) console.error('❌ Erro contas_receber:', crRes.error);
 
+    if (comprasRes.error) console.error('❌ Erro compras:', comprasRes.error);
+    if (capRes.error) console.error('❌ Erro contas_a_pagar:', capRes.error);
+
     setItems(concRes.data || []);
     setLancamentos(lancRes.data || []);
     setVendas((vendasRes.data || []) as Venda[]);
     setContasReceber((crRes.data || []) as ContaReceber[]);
+    setCompras((comprasRes.data || []) as unknown as Compra[]);
+    setContasPagar((capRes.data || []) as ContaPagar[]);
     setLoading(false);
   }, [contaSel, mesSel]);
 
@@ -236,6 +275,71 @@ export default function ConciliacaoBancaria() {
     }
   };
 
+  const handleVincularCompra = async (compraId: string) => {
+    if (!vinculoItem) return;
+    try {
+      const compra = compras.find(c => c.id === compraId);
+      const divergente = !!(compra && Math.abs(Number(compra.valor_total) - vinculoItem.valor_extrato) > 0.01);
+
+      let novoLancamentoId: string | null = null;
+      if (!divergente) {
+        novoLancamentoId = await criarLancamentoDeConciliacao(vinculoItem, null);
+      }
+
+      const { error } = await supabase.from('conciliacao_bancaria').update({
+        compra_id: compraId,
+        lancamento_id: novoLancamentoId,
+        venda_id: null,
+        status: divergente ? 'divergente' : 'conciliado',
+        data_conciliacao: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }).eq('id', vinculoItem.id);
+      if (error) throw error;
+      setVinculoOpen(false);
+      setVinculoItem(null);
+      loadData();
+      setDialog({ isOpen: true, type: 'success', title: 'Conciliado!', message: divergente ? 'Compra vinculada com divergência de valor.' : 'Compra conciliada e lançamento financeiro criado.' });
+    } catch (err: any) {
+      setDialog({ isOpen: true, type: 'error', title: 'Erro', message: err.message });
+    }
+  };
+
+  const handleVincularContaPagar = async (cpId: string) => {
+    if (!vinculoItem) return;
+    try {
+      const cp = contasPagar.find(c => c.id === cpId);
+      const divergente = !!(cp && Math.abs(Number(cp.valor_parcela) - vinculoItem.valor_extrato) > 0.01);
+
+      let novoLancamentoId: string | null = null;
+      if (!divergente) {
+        novoLancamentoId = await criarLancamentoDeConciliacao(vinculoItem, null);
+      }
+
+      const { error } = await supabase.from('conciliacao_bancaria').update({
+        conta_pagar_id: cpId,
+        lancamento_id: novoLancamentoId,
+        venda_id: null,
+        status: divergente ? 'divergente' : 'conciliado',
+        data_conciliacao: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }).eq('id', vinculoItem.id);
+      if (error) throw error;
+      if (!divergente) {
+        await supabase.from('contas_a_pagar').update({
+          status_pagamento: 'pago',
+          data_pagamento: vinculoItem.data_extrato,
+          valor_pago: vinculoItem.valor_extrato,
+        }).eq('id', cpId);
+      }
+      setVinculoOpen(false);
+      setVinculoItem(null);
+      loadData();
+      setDialog({ isOpen: true, type: 'success', title: 'Conciliado!', message: divergente ? 'Conta vinculada com divergência de valor.' : 'Conta a pagar quitada e lançamento criado.' });
+    } catch (err: any) {
+      setDialog({ isOpen: true, type: 'error', title: 'Erro', message: err.message });
+    }
+  };
+
   const handleVincularVenda = async (vendaId: string) => {
     if (!vinculoItem) return;
     try {
@@ -272,11 +376,19 @@ export default function ConciliacaoBancaria() {
       await supabase.from('lancamentos_financeiros').delete().eq('id', item.lancamento_id);
     }
     await supabase.from('conciliacao_bancaria').update({
-      lancamento_id: null, venda_id: null, status: 'pendente',
+      lancamento_id: null, venda_id: null, compra_id: null, conta_pagar_id: null,
+      status: 'pendente',
       data_conciliacao: null, updated_at: new Date().toISOString(),
     }).eq('id', item.id);
     if (item.venda_id)
       await supabase.from('vendas').update({ conciliado: false }).eq('id', item.venda_id);
+    if (item.conta_pagar_id) {
+      await supabase.from('contas_a_pagar').update({
+        status_pagamento: 'pendente',
+        data_pagamento: null,
+        valor_pago: null,
+      }).eq('id', item.conta_pagar_id);
+    }
     loadData();
   };
 
@@ -288,78 +400,135 @@ export default function ConciliacaoBancaria() {
   };
 
   const conciliarAutomatico = async () => {
-    const pendentesCredito = items.filter(i => i.status === 'pendente' && i.tipo === 'credito');
+    const pendentes = items.filter(i => i.status === 'pendente');
 
-    if (pendentesCredito.length === 0) {
-      setDialog({ isOpen: true, type: 'info', title: 'Nada a conciliar', message: 'Não há créditos pendentes para conciliar.' });
+    if (pendentes.length === 0) {
+      setDialog({ isOpen: true, type: 'info', title: 'Nada a conciliar', message: 'Não há lançamentos pendentes para conciliar.' });
       return;
     }
 
     setLoading(true);
-    let conciliadosData = 0;     // match por valor + data (alta confiança)
-    let conciliadosValor = 0;    // match só por valor
+    let conciliadosData = 0;
+    let conciliadosValor = 0;
     let multiplos = 0;
     let semMatch = 0;
     const crUsadas = new Set<string>();
     const vendasUsadas = new Set<string>();
+    const cpUsadas = new Set<string>();
+    const comprasUsadas = new Set<string>();
 
-    for (const item of pendentesCredito) {
-      // 1ª tentativa: contas_receber com valor E data de vencimento EXATAMENTE iguais
-      const crMatchesExatos = contasReceber.filter(cr =>
-        !crUsadas.has(cr.id)
-        && Math.abs(Number(cr.valor_parcela) - item.valor_extrato) < 0.01
-        && cr.data_vencimento === item.data_extrato
-      );
+    for (const item of pendentes) {
+      if (item.tipo === 'credito') {
+        // CRÉDITO → contas_receber / vendas
+        const crMatchesExatos = contasReceber.filter(cr =>
+          !crUsadas.has(cr.id)
+          && Math.abs(Number(cr.valor_parcela) - item.valor_extrato) < 0.01
+          && cr.data_vencimento === item.data_extrato
+        );
 
-      // Só concilia automaticamente se houver exatamente 1 parcela com valor e data batendo
-      if (crMatchesExatos.length === 1) {
-        const cr = crMatchesExatos[0];
-        const novoLancamentoId = await criarLancamentoDeConciliacao(item, cr.venda_id);
-        const { error } = await supabase.from('conciliacao_bancaria').update({
-          venda_id: cr.venda_id,
-          lancamento_id: novoLancamentoId,
-          status: 'conciliado',
-          data_conciliacao: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        }).eq('id', item.id);
+        if (crMatchesExatos.length === 1) {
+          const cr = crMatchesExatos[0];
+          const novoLancamentoId = await criarLancamentoDeConciliacao(item, cr.venda_id);
+          const { error } = await supabase.from('conciliacao_bancaria').update({
+            venda_id: cr.venda_id,
+            lancamento_id: novoLancamentoId,
+            status: 'conciliado',
+            data_conciliacao: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }).eq('id', item.id);
 
-        if (!error) {
-          await supabase.from('contas_receber').update({
-            status_pagamento: 'pago',
-            data_pagamento: item.data_extrato,
-            valor_pago: item.valor_extrato,
-          }).eq('id', cr.id);
-          crUsadas.add(cr.id);
-          conciliadosData++;
-          continue;
+          if (!error) {
+            await supabase.from('contas_receber').update({
+              status_pagamento: 'pago',
+              data_pagamento: item.data_extrato,
+              valor_pago: item.valor_extrato,
+            }).eq('id', cr.id);
+            crUsadas.add(cr.id);
+            conciliadosData++;
+            continue;
+          }
         }
-      }
 
-      // 2ª tentativa: fallback por valor apenas (vendas)
-      const matches = vendas.filter(v =>
-        !vendasUsadas.has(v.id) && Math.abs(v.valor_total - item.valor_extrato) < 0.01
-      );
+        const matches = vendas.filter(v =>
+          !vendasUsadas.has(v.id) && Math.abs(v.valor_total - item.valor_extrato) < 0.01
+        );
 
-      if (matches.length === 1) {
-        const venda = matches[0];
-        const novoLancamentoId = await criarLancamentoDeConciliacao(item, venda.id);
-        const { error } = await supabase.from('conciliacao_bancaria').update({
-          venda_id: venda.id,
-          lancamento_id: novoLancamentoId,
-          status: 'conciliado',
-          data_conciliacao: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        }).eq('id', item.id);
+        if (matches.length === 1) {
+          const venda = matches[0];
+          const novoLancamentoId = await criarLancamentoDeConciliacao(item, venda.id);
+          const { error } = await supabase.from('conciliacao_bancaria').update({
+            venda_id: venda.id,
+            lancamento_id: novoLancamentoId,
+            status: 'conciliado',
+            data_conciliacao: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }).eq('id', item.id);
 
-        if (!error) {
-          await supabase.from('vendas').update({ conciliado: true }).eq('id', venda.id);
-          vendasUsadas.add(venda.id);
-          conciliadosValor++;
+          if (!error) {
+            await supabase.from('vendas').update({ conciliado: true }).eq('id', venda.id);
+            vendasUsadas.add(venda.id);
+            conciliadosValor++;
+          }
+        } else if (matches.length === 0) {
+          semMatch++;
+        } else {
+          multiplos++;
         }
-      } else if (matches.length === 0) {
-        semMatch++;
       } else {
-        multiplos++;
+        // DÉBITO → contas_a_pagar / compras
+        const cpMatchesExatos = contasPagar.filter(cp =>
+          !cpUsadas.has(cp.id)
+          && Math.abs(Number(cp.valor_parcela) - item.valor_extrato) < 0.01
+          && cp.data_vencimento === item.data_extrato
+        );
+
+        if (cpMatchesExatos.length === 1) {
+          const cp = cpMatchesExatos[0];
+          const novoLancamentoId = await criarLancamentoDeConciliacao(item, null);
+          const { error } = await supabase.from('conciliacao_bancaria').update({
+            conta_pagar_id: cp.id,
+            lancamento_id: novoLancamentoId,
+            status: 'conciliado',
+            data_conciliacao: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }).eq('id', item.id);
+
+          if (!error) {
+            await supabase.from('contas_a_pagar').update({
+              status_pagamento: 'pago',
+              data_pagamento: item.data_extrato,
+              valor_pago: item.valor_extrato,
+            }).eq('id', cp.id);
+            cpUsadas.add(cp.id);
+            conciliadosData++;
+            continue;
+          }
+        }
+
+        const compraMatches = compras.filter(c =>
+          !comprasUsadas.has(c.id) && Math.abs(Number(c.valor_total) - item.valor_extrato) < 0.01
+        );
+
+        if (compraMatches.length === 1) {
+          const compra = compraMatches[0];
+          const novoLancamentoId = await criarLancamentoDeConciliacao(item, null);
+          const { error } = await supabase.from('conciliacao_bancaria').update({
+            compra_id: compra.id,
+            lancamento_id: novoLancamentoId,
+            status: 'conciliado',
+            data_conciliacao: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }).eq('id', item.id);
+
+          if (!error) {
+            comprasUsadas.add(compra.id);
+            conciliadosValor++;
+          }
+        } else if (compraMatches.length === 0) {
+          semMatch++;
+        } else {
+          multiplos++;
+        }
       }
     }
 
@@ -758,6 +927,99 @@ export default function ConciliacaoBancaria() {
                   <span className="font-normal text-slate-400 ml-2">{vinculoItem.tipo === 'credito' ? 'Crédito' : 'Débito'} · {formatDate(vinculoItem.data_extrato)}</span>
                 </p>
               </div>
+
+              {/* Seção Compras / Contas a Pagar — para débitos */}
+              {vinculoItem.tipo === 'debito' && (() => {
+                const cpSugestoes = contasPagar.filter(cp => Math.abs(Number(cp.valor_parcela) - vinculoItem.valor_extrato) <= 0.01);
+                const cpDemais    = contasPagar.filter(cp => Math.abs(Number(cp.valor_parcela) - vinculoItem.valor_extrato) > 0.01);
+                const compraSugestoes = compras.filter(c => Math.abs(Number(c.valor_total) - vinculoItem.valor_extrato) <= 0.01);
+                const compraDemais    = compras.filter(c => Math.abs(Number(c.valor_total) - vinculoItem.valor_extrato) > 0.01);
+                return (
+                  <>
+                    {(contasPagar.length > 0) && (
+                      <div>
+                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Contas a Pagar</p>
+                        <div className="space-y-2 max-h-44 overflow-y-auto">
+                          {cpSugestoes.map(cp => (
+                            <button key={cp.id} onClick={() => handleVincularContaPagar(cp.id)}
+                              className="w-full text-left p-3 border-2 border-red-300 bg-red-50 rounded-lg hover:bg-red-100 transition-colors">
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2 mb-0.5">
+                                    <span className="text-[10px] bg-red-600 text-white px-1.5 py-0.5 rounded font-bold shrink-0">✨ Sugestão</span>
+                                    <p className="text-sm font-semibold text-slate-800 truncate">{cp.descricao || cp.origem_tipo || 'Conta a pagar'}</p>
+                                  </div>
+                                  <p className="text-xs text-slate-500">Vencimento: {formatDate(cp.data_vencimento)} · Parcela {cp.numero_parcela}</p>
+                                </div>
+                                <p className="text-sm font-bold text-red-600 shrink-0">{fmtBRL(Number(cp.valor_parcela))}</p>
+                              </div>
+                            </button>
+                          ))}
+                          {cpDemais.map(cp => (
+                            <button key={cp.id} onClick={() => handleVincularContaPagar(cp.id)}
+                              className="w-full text-left p-3 border border-slate-200 rounded-lg hover:border-red-400 hover:bg-red-50 transition-colors">
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="min-w-0">
+                                  <p className="text-sm font-medium text-slate-700 truncate">{cp.descricao || cp.origem_tipo || 'Conta a pagar'}</p>
+                                  <p className="text-xs text-slate-400">Vencimento: {formatDate(cp.data_vencimento)}</p>
+                                </div>
+                                <div className="text-right shrink-0">
+                                  <p className="text-sm font-bold text-slate-700">{fmtBRL(Number(cp.valor_parcela))}</p>
+                                  <p className="text-[10px] text-amber-600">valor diferente</p>
+                                </div>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {compras.length > 0 && (
+                      <div>
+                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Compras de Pontos / Milhas</p>
+                        <div className="space-y-2 max-h-44 overflow-y-auto">
+                          {compraSugestoes.map(c => (
+                            <button key={c.id} onClick={() => handleVincularCompra(c.id)}
+                              className="w-full text-left p-3 border-2 border-red-300 bg-red-50 rounded-lg hover:bg-red-100 transition-colors">
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2 mb-0.5">
+                                    <span className="text-[10px] bg-red-600 text-white px-1.5 py-0.5 rounded font-bold shrink-0">✨ Sugestão</span>
+                                    <p className="text-sm font-semibold text-slate-800 truncate">{c.parceiros?.nome_parceiro || '—'}</p>
+                                  </div>
+                                  <p className="text-xs text-slate-500 truncate">
+                                    {c.programas_fidelidade?.nome || '—'} · {Number(c.pontos_milhas || 0).toLocaleString('pt-BR')} pts · {c.data_entrada ? formatDate(c.data_entrada) : ''}
+                                  </p>
+                                </div>
+                                <p className="text-sm font-bold text-red-600 shrink-0">{fmtBRL(Number(c.valor_total))}</p>
+                              </div>
+                            </button>
+                          ))}
+                          {compraDemais.map(c => (
+                            <button key={c.id} onClick={() => handleVincularCompra(c.id)}
+                              className="w-full text-left p-3 border border-slate-200 rounded-lg hover:border-red-400 hover:bg-red-50 transition-colors">
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="min-w-0">
+                                  <p className="text-sm font-medium text-slate-700 truncate">{c.parceiros?.nome_parceiro || '—'} · {c.programas_fidelidade?.nome || '—'}</p>
+                                  <p className="text-xs text-slate-400">{c.data_entrada ? formatDate(c.data_entrada) : ''}</p>
+                                </div>
+                                <div className="text-right shrink-0">
+                                  <p className="text-sm font-bold text-slate-700">{fmtBRL(Number(c.valor_total))}</p>
+                                  <p className="text-[10px] text-amber-600">valor diferente</p>
+                                </div>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {contasPagar.length === 0 && compras.length === 0 && (
+                      <p className="text-sm text-slate-400 text-center py-3 bg-slate-50 rounded-lg">Nenhuma conta a pagar ou compra disponível</p>
+                    )}
+                  </>
+                );
+              })()}
 
               {/* Seção Vendas — para créditos */}
               {vinculoItem.tipo === 'credito' && (
