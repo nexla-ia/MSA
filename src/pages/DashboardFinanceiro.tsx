@@ -16,6 +16,7 @@ ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Title, Tool
 // ─── Types ────────────────────────────────────────────────────────────────────
 type ContaReceber = {
   id: string;
+  venda_id: string | null;
   data_vencimento: string;
   valor_parcela: number;
   numero_parcela: number;
@@ -25,6 +26,11 @@ type ContaReceber = {
   data_pagamento: string | null;
   valor_pago: number | null;
   origem_tipo: string | null;
+  venda?: {
+    ordem_compra: string | null;
+    clientes: { nome_cliente: string } | null;
+    parceiros: { nome_parceiro: string } | null;
+  } | null;
 };
 
 type ContaPagar = {
@@ -108,6 +114,8 @@ export default function DashboardFinanceiro() {
   const [cartoesMap, setCartoesMap] = useState<Record<string, string>>({});
   const [cartoesTipoMap, setCartoesTipoMap] = useState<Record<string, string>>({});
   const [principalIdMap, setPrincipalIdMap] = useState<Record<string, string>>({});
+  // venda_id -> total recebido na conciliação bancária
+  const [recebidoConciliacao, setRecebidoConciliacao] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [lastUpd, setLastUpd] = useState('');
 
@@ -125,13 +133,25 @@ export default function DashboardFinanceiro() {
 
   // ── Fetch ──────────────────────────────────────────────────────────────────
   const fetchAll = useCallback(async () => {
-    const [{ data: cr }, { data: ap }, { data: cartoes }] = await Promise.all([
-      supabase.from('contas_receber').select('*').order('data_vencimento', { ascending: true }),
+    const [{ data: cr }, { data: ap }, { data: cartoes }, { data: conc }] = await Promise.all([
+      supabase.from('contas_receber')
+        .select('*, venda:vendas(ordem_compra, clientes(nome_cliente), parceiros(nome_parceiro))')
+        .order('data_vencimento', { ascending: true }),
       supabase.from('contas_a_pagar').select('*').order('data_vencimento', { ascending: true }),
       supabase.from('cartoes_credito').select('id,cartao,banco_emissor,tipo_cartao,cartao_principal_id').order('cartao'),
+      supabase.from('conciliacao_bancaria').select('venda_id, valor_extrato').not('venda_id', 'is', null),
     ]);
     setDataCR((cr as ContaReceber[]) || []);
     setDataAP((ap as ContaPagar[]) || []);
+
+    // Soma valores da conciliação por venda
+    const recebido: Record<string, number> = {};
+    (conc || []).forEach((c: { venda_id: string | null; valor_extrato: number }) => {
+      if (c.venda_id) {
+        recebido[c.venda_id] = (recebido[c.venda_id] || 0) + Number(c.valor_extrato || 0);
+      }
+    });
+    setRecebidoConciliacao(recebido);
     const map: Record<string, string> = {};
     const tipoMap: Record<string, string> = {};
     const pidMap: Record<string, string> = {};
@@ -179,7 +199,12 @@ export default function DashboardFinanceiro() {
       const eff = effStatus(r.status_pagamento, r.data_vencimento);
       if (selMoCR && mkKey(r.data_vencimento) !== selMoCR) return false;
       if (filtStatusCR && filtStatusCR !== eff) return false;
-      if (filtBuscaCR && !(r.origem_tipo || '').toLowerCase().includes(filtBuscaCR.toLowerCase())) return false;
+      if (filtBuscaCR) {
+        const txt = filtBuscaCR.toLowerCase();
+        const nomeCliente = r.venda?.clientes?.nome_cliente || r.venda?.parceiros?.nome_parceiro || '';
+        const oc = r.venda?.ordem_compra || '';
+        if (!nomeCliente.toLowerCase().includes(txt) && !oc.toLowerCase().includes(txt)) return false;
+      }
       return true;
     });
 
@@ -468,35 +493,42 @@ export default function DashboardFinanceiro() {
                 <option value="parcial">Parcial</option>
               </select>
               <input value={filtBuscaCR} onChange={e => setFiltBuscaCR(e.target.value)}
-                placeholder="Buscar origem..."
-                className="border border-slate-200 text-slate-600 text-xs px-2 py-1.5 rounded-lg bg-white outline-none focus:ring-1 focus:ring-blue-300 w-36 placeholder-slate-400" />
+                placeholder="Buscar cliente ou OC..."
+                className="border border-slate-200 text-slate-600 text-xs px-2 py-1.5 rounded-lg bg-white outline-none focus:ring-1 focus:ring-blue-300 w-44 placeholder-slate-400" />
             </div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
-                  {['#','Vencimento','Valor','Parcela','Forma Pgto','Status','Data Pgto','Valor Pago','Origem'].map(h => (
+                  {['#','Vencimento','Cliente','Pedido de Vendas','Valor','Forma Pgto','Status','Data Pgto','Valor Pago','Valor em Aberto'].map(h => (
                     <th key={h} className="px-4 py-3 text-left font-medium border-b border-slate-100 whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
                 {rows.length === 0 ? (
-                  <tr><td colSpan={9} className="text-center py-10 text-slate-400 text-sm">Nenhum registro encontrado.</td></tr>
-                ) : rows.map((r, i) => (
-                  <tr key={r.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-4 py-3 text-slate-400 text-xs">{i + 1}</td>
-                    <td className="px-4 py-3 text-slate-700 font-medium">{fmtDate(r.data_vencimento)}</td>
-                    <td className="px-4 py-3 font-semibold text-slate-800">{fmtBRL(r.valor_parcela)}</td>
-                    <td className="px-4 py-3 text-slate-500 text-xs">{r.numero_parcela}/{r.total_parcelas}</td>
-                    <td className="px-4 py-3 text-slate-600">{r.forma_pagamento || <span className="text-slate-300">—</span>}</td>
-                    <td className="px-4 py-3"><StatusBadge status={r.status_pagamento} dv={r.data_vencimento} /></td>
-                    <td className="px-4 py-3 text-slate-500">{fmtDate(r.data_pagamento)}</td>
-                    <td className="px-4 py-3 text-emerald-600 font-medium">{r.valor_pago ? fmtBRL(r.valor_pago) : <span className="text-slate-300">—</span>}</td>
-                    <td className="px-4 py-3 text-slate-400 text-xs">{r.origem_tipo || '—'}</td>
-                  </tr>
-                ))}
+                  <tr><td colSpan={10} className="text-center py-10 text-slate-400 text-sm">Nenhum registro encontrado.</td></tr>
+                ) : rows.map((r, i) => {
+                  const valorPagoConc = r.venda_id ? recebidoConciliacao[r.venda_id] : undefined;
+                  const valorPagoExibir = valorPagoConc !== undefined && valorPagoConc > 0 ? valorPagoConc : Number(r.valor_pago || 0);
+                  const valorAberto = Math.max(Number(r.valor_parcela || 0) - valorPagoExibir, 0);
+                  const cliente = r.venda?.clientes?.nome_cliente || r.venda?.parceiros?.nome_parceiro || '—';
+                  return (
+                    <tr key={r.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-4 py-3 text-slate-400 text-xs">{i + 1}</td>
+                      <td className="px-4 py-3 text-slate-700 font-medium whitespace-nowrap">{fmtDate(r.data_vencimento)}</td>
+                      <td className="px-4 py-3 text-slate-700 max-w-[200px] truncate" title={cliente}>{cliente}</td>
+                      <td className="px-4 py-3 text-emerald-700 font-semibold whitespace-nowrap">{r.venda?.ordem_compra || <span className="text-slate-300">—</span>}</td>
+                      <td className="px-4 py-3 font-semibold text-slate-800">{fmtBRL(r.valor_parcela)}</td>
+                      <td className="px-4 py-3 text-slate-600">{r.forma_pagamento || <span className="text-slate-300">—</span>}</td>
+                      <td className="px-4 py-3"><StatusBadge status={r.status_pagamento} dv={r.data_vencimento} /></td>
+                      <td className="px-4 py-3 text-slate-500">{fmtDate(r.data_pagamento)}</td>
+                      <td className="px-4 py-3 text-emerald-600 font-medium">{valorPagoExibir > 0 ? fmtBRL(valorPagoExibir) : <span className="text-slate-300">—</span>}</td>
+                      <td className={`px-4 py-3 font-medium ${valorAberto > 0 ? 'text-amber-600' : 'text-slate-300'}`}>{valorAberto > 0 ? fmtBRL(valorAberto) : '—'}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
