@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Package, TrendingUp, TrendingDown, History, RefreshCw } from 'lucide-react';
+import { Package, TrendingUp, TrendingDown, History, RefreshCw, DollarSign } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { formatCurrency } from '../lib/formatters';
 import { FilterBar } from '../components/FilterCombobox';
@@ -237,6 +237,15 @@ export default function Estoque() {
   const totalEstoque = estoques.reduce((sum, item) => sum + item.estoque_atual, 0);
   const totalSaldoFinal = estoques.reduce((sum, item) => sum + item.saldo_final, 0);
   const totalCPFs = estoques.reduce((sum, item) => sum + item.cpfs_disponiveis, 0);
+  // Valor total do estoque a custo médio: soma de (saldo × custo_medio / 1000)
+  const valorTotalEstoque = estoques.reduce(
+    (sum, item) => sum + (Number(item.saldo_final || 0) * Number(item.custo_medio || 0)) / 1000,
+    0
+  );
+  // Quantidade de parceiros únicos com saldo
+  const parceirosComSaldo = new Set(
+    estoques.filter(e => Number(e.saldo_final || 0) > 0).map(e => e.parceiro_id)
+  ).size;
 
   if (loading) {
     return <div className="flex justify-center items-center h-64">Carregando...</div>;
@@ -255,12 +264,13 @@ export default function Estoque() {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white rounded-lg shadow p-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+        <div className="bg-white rounded-lg shadow p-5">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-slate-600">Estoque Total</p>
               <p className="text-2xl font-bold text-slate-800 mt-1">{totalEstoque.toLocaleString('pt-BR')}</p>
+              <p className="text-xs text-slate-400 mt-0.5">pontos</p>
             </div>
             <div className="bg-blue-100 p-3 rounded-lg">
               <Package className="w-6 h-6 text-blue-600" />
@@ -268,11 +278,12 @@ export default function Estoque() {
           </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow p-6">
+        <div className="bg-white rounded-lg shadow p-5">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-slate-600">Saldo Final</p>
               <p className="text-2xl font-bold text-slate-800 mt-1">{totalSaldoFinal.toLocaleString('pt-BR')}</p>
+              <p className="text-xs text-slate-400 mt-0.5">pontos disponíveis</p>
             </div>
             <div className="bg-green-100 p-3 rounded-lg">
               <TrendingUp className="w-6 h-6 text-green-600" />
@@ -280,11 +291,38 @@ export default function Estoque() {
           </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow p-6">
+        <div className="bg-white rounded-lg shadow p-5 border border-emerald-100">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-slate-600">Valor Total do Estoque</p>
+              <p className="text-2xl font-bold text-emerald-700 mt-1">{formatCurrency(valorTotalEstoque)}</p>
+              <p className="text-xs text-slate-400 mt-0.5">a custo médio</p>
+            </div>
+            <div className="bg-emerald-100 p-3 rounded-lg">
+              <DollarSign className="w-6 h-6 text-emerald-600" />
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow p-5">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-slate-600">Parceiros com Saldo</p>
+              <p className="text-2xl font-bold text-slate-800 mt-1">{parceirosComSaldo}</p>
+              <p className="text-xs text-slate-400 mt-0.5">parceiros distintos</p>
+            </div>
+            <div className="bg-purple-100 p-3 rounded-lg">
+              <History className="w-6 h-6 text-purple-600" />
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow p-5">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-slate-600">CPFs Disponíveis</p>
               <p className="text-2xl font-bold text-slate-800 mt-1">{totalCPFs}</p>
+              <p className="text-xs text-slate-400 mt-0.5">para emissão</p>
             </div>
             <div className="bg-blue-100 p-3 rounded-lg">
               <TrendingDown className="w-6 h-6 text-blue-600" />
@@ -292,11 +330,12 @@ export default function Estoque() {
           </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow p-6">
+        <div className="bg-white rounded-lg shadow p-5">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-slate-600">Parceiros Ativos</p>
               <p className="text-2xl font-bold text-slate-800 mt-1">{estoques.length}</p>
+              <p className="text-xs text-slate-400 mt-0.5">total cadastrado</p>
             </div>
             <div className="bg-orange-100 p-3 rounded-lg">
               <History className="w-6 h-6 text-orange-600" />
@@ -351,30 +390,57 @@ export default function Estoque() {
                   <th className="px-4 py-3 text-right text-xs font-medium text-slate-700 uppercase tracking-wider">CPFs Disponíveis</th>
                   <th className="px-4 py-3 text-right text-xs font-medium text-slate-700 uppercase tracking-wider">Emissão Ideal</th>
                   <th className="px-4 py-3 text-right text-xs font-medium text-slate-700 uppercase tracking-wider">Custo Médio (mil)</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-slate-700 uppercase tracking-wider">Valor R$</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-slate-200">
                 {estoquesFiltrados.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-4 py-8 text-center text-slate-500">Nenhum estoque encontrado</td>
+                    <td colSpan={9} className="px-4 py-8 text-center text-slate-500">Nenhum estoque encontrado</td>
                   </tr>
                 ) : (
-                  estoquesFiltrados.map((item, index) => (
-                    <tr key={index} className="hover:bg-slate-50">
-                      <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-900">{item.parceiro_nome}</td>
-                      <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-900">{item.programa_nome}</td>
-                      <td className="px-4 py-3 whitespace-nowrap text-sm text-right text-slate-900 font-medium">{item.estoque_atual.toLocaleString('pt-BR')}</td>
-                      <td className="px-4 py-3 whitespace-nowrap text-sm text-right text-slate-600">{item.venda_consignada.toLocaleString('pt-BR')}</td>
-                      <td className="px-4 py-3 whitespace-nowrap text-sm text-right font-semibold text-green-600">{item.saldo_final.toLocaleString('pt-BR')}</td>
-                      <td className="px-4 py-3 whitespace-nowrap text-sm text-right text-slate-900">{item.cpfs_disponiveis}</td>
-                      <td className="px-4 py-3 whitespace-nowrap text-sm text-right text-blue-600 font-medium">
-                        {item.emissao_ideal.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap text-sm text-right text-slate-600">{formatCurrency(item.custo_medio)}</td>
-                    </tr>
-                  ))
+                  estoquesFiltrados.map((item, index) => {
+                    const valorItem = (Number(item.saldo_final || 0) * Number(item.custo_medio || 0)) / 1000;
+                    return (
+                      <tr key={index} className="hover:bg-slate-50">
+                        <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-900">{item.parceiro_nome}</td>
+                        <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-900">{item.programa_nome}</td>
+                        <td className="px-4 py-3 whitespace-nowrap text-sm text-right text-slate-900 font-medium">{item.estoque_atual.toLocaleString('pt-BR')}</td>
+                        <td className="px-4 py-3 whitespace-nowrap text-sm text-right text-slate-600">{item.venda_consignada.toLocaleString('pt-BR')}</td>
+                        <td className="px-4 py-3 whitespace-nowrap text-sm text-right font-semibold text-green-600">{item.saldo_final.toLocaleString('pt-BR')}</td>
+                        <td className="px-4 py-3 whitespace-nowrap text-sm text-right text-slate-900">{item.cpfs_disponiveis}</td>
+                        <td className="px-4 py-3 whitespace-nowrap text-sm text-right text-blue-600 font-medium">
+                          {item.emissao_ideal.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap text-sm text-right text-slate-600">{formatCurrency(item.custo_medio)}</td>
+                        <td className="px-4 py-3 whitespace-nowrap text-sm text-right text-emerald-700 font-bold">{formatCurrency(valorItem)}</td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
+              {estoquesFiltrados.length > 0 && (
+                <tfoot>
+                  <tr className="bg-slate-50 font-bold">
+                    <td colSpan={4} className="px-4 py-3 text-right text-sm text-slate-700">Total</td>
+                    <td className="px-4 py-3 text-right text-sm text-green-700">
+                      {estoquesFiltrados.reduce((s, it) => s + Number(it.saldo_final || 0), 0).toLocaleString('pt-BR')}
+                    </td>
+                    <td className="px-4 py-3 text-right text-sm text-slate-700">
+                      {estoquesFiltrados.reduce((s, it) => s + Number(it.cpfs_disponiveis || 0), 0)}
+                    </td>
+                    <td colSpan={2} className="px-4 py-3"></td>
+                    <td className="px-4 py-3 text-right text-sm text-emerald-700">
+                      {formatCurrency(
+                        estoquesFiltrados.reduce(
+                          (s, it) => s + (Number(it.saldo_final || 0) * Number(it.custo_medio || 0)) / 1000,
+                          0
+                        )
+                      )}
+                    </td>
+                  </tr>
+                </tfoot>
+              )}
             </table>
           </div>
         ) : (
