@@ -16,6 +16,8 @@ type Cartao = {
   tipo_cartao?: string;
   cartao_principal_id?: string | null;
   cartao_principal?: { cartao: string };
+  classificacao_contabil_id?: string | null;
+  classificacao?: { classificacao: string } | null;
   status: string;
   dia_fechamento: number | null;
   dia_vencimento: number | null;
@@ -36,9 +38,16 @@ type ContaBancaria = {
   codigo_banco: string;
 };
 
+type Classificacao = {
+  id: string;
+  classificacao: string;
+  descricao?: string;
+};
+
 export default function Cartoes() {
   const [cartoes, setCartoes] = useState<Cartao[]>([]);
   const [contasBancarias, setContasBancarias] = useState<ContaBancaria[]>([]);
+  const [classificacoes, setClassificacoes] = useState<Classificacao[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Cartao | null>(null);
@@ -63,6 +72,7 @@ export default function Cartoes() {
     bandeira: '',
     tipo_cartao: 'principal',
     cartao_principal_id: '',
+    classificacao_contabil_id: '',
     status: 'ativo',
     dia_fechamento: '',
     dia_vencimento: '',
@@ -80,7 +90,16 @@ export default function Cartoes() {
   useEffect(() => {
     loadData();
     loadContasBancarias();
+    loadClassificacoes();
   }, []);
+
+  const loadClassificacoes = async () => {
+    const { data } = await supabase
+      .from('classificacao_contabil')
+      .select('id, classificacao, descricao')
+      .order('classificacao');
+    setClassificacoes(data || []);
+  };
 
   const loadData = async () => {
     try {
@@ -89,7 +108,8 @@ export default function Cartoes() {
         .select(`
           *,
           conta_bancaria:contas_bancarias(nome_banco, codigo_banco),
-          cartao_principal:cartao_principal_id(cartao)
+          cartao_principal:cartao_principal_id(cartao),
+          classificacao:classificacao_contabil(classificacao)
         `)
         .order('cartao');
 
@@ -128,7 +148,7 @@ export default function Cartoes() {
 
   const handleAdd = () => {
     setEditing(null);
-    setFormData({ cartao: '', conta_bancaria_id: '', bandeira: '', tipo_cartao: 'principal', cartao_principal_id: '', status: 'ativo', dia_fechamento: '', dia_vencimento: '', valor_mensalidade: '', limites: '', limite_emergencial: '', limite_global: '', limite_disponivel: '', valor_isencao: '', onde_usar: '', mes_expiracao: '', ano_expiracao: '' });
+    setFormData({ cartao: '', conta_bancaria_id: '', bandeira: '', tipo_cartao: 'principal', cartao_principal_id: '', classificacao_contabil_id: '', status: 'ativo', dia_fechamento: '', dia_vencimento: '', valor_mensalidade: '', limites: '', limite_emergencial: '', limite_global: '', limite_disponivel: '', valor_isencao: '', onde_usar: '', mes_expiracao: '', ano_expiracao: '' });
     setModalOpen(true);
   };
 
@@ -148,6 +168,7 @@ export default function Cartoes() {
       bandeira: item.bandeira || '',
       tipo_cartao: item.tipo_cartao || 'principal',
       cartao_principal_id: item.cartao_principal_id || '',
+      classificacao_contabil_id: item.classificacao_contabil_id || '',
       status: item.status,
       dia_fechamento: item.dia_fechamento?.toString() || '',
       dia_vencimento: item.dia_vencimento?.toString() || '',
@@ -228,6 +249,7 @@ export default function Cartoes() {
       bandeira: formData.bandeira || null,
       tipo_cartao: formData.tipo_cartao,
       cartao_principal_id: formData.cartao_principal_id || null,
+      classificacao_contabil_id: formData.classificacao_contabil_id || null,
       status: formData.status,
       dia_fechamento: formData.dia_fechamento ? parseInt(formData.dia_fechamento) : null,
       dia_vencimento: formData.dia_vencimento ? parseInt(formData.dia_vencimento) : null,
@@ -319,7 +341,12 @@ export default function Cartoes() {
           { key: 'limite_emergencial', label: 'Limite Emergencial', sumable: true, render: (item) => formatCurrency(item.limite_emergencial) },
           { key: 'limite_global', label: 'Limite Global', sumable: true, render: (item) => formatCurrency(item.limite_global) },
           { key: 'valor_isencao', label: 'Valor Isenção', sumable: true, render: (item) => formatCurrency(item.valor_isencao) },
-          { key: 'onde_usar', label: 'Onde Usar' }
+          { key: 'onde_usar', label: 'Onde Usar' },
+          {
+            key: 'classificacao',
+            label: 'Classificação Contábil',
+            render: (item: Cartao) => item.classificacao?.classificacao || <span className="text-slate-300">—</span>
+          }
         ]}
         onAdd={handleAdd}
         onEdit={handleEdit}
@@ -400,6 +427,20 @@ export default function Cartoes() {
               </select>
             </div>
           )}
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Classificação Contábil</label>
+            <select
+              value={formData.classificacao_contabil_id}
+              onChange={(e) => setFormData({ ...formData, classificacao_contabil_id: e.target.value })}
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">Selecione uma classificação</option>
+              {classificacoes.map(c => (
+                <option key={c.id} value={c.id}>{c.classificacao}</option>
+              ))}
+            </select>
+            <p className="text-xs text-slate-400 mt-1">Despesas deste cartão serão vinculadas a essa classificação</p>
+          </div>
           <div className="grid grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Status</label>
