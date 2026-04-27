@@ -8,7 +8,7 @@ import {
 import { Bar, Doughnut } from 'react-chartjs-2';
 import {
   TrendingUp, TrendingDown, DollarSign, AlertTriangle,
-  Calendar, CheckCircle, RefreshCw, CreditCard
+  Calendar, CheckCircle, RefreshCw, CreditCard, Package, Banknote
 } from 'lucide-react';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Title, Tooltip, Legend);
@@ -46,6 +46,27 @@ type ContaPagar = {
   valor_pago: number | null;
   origem_tipo: string | null;
   cartao_id: string | null;
+};
+
+type EstoqueLinha = {
+  parceiro_id: string;
+  programa_id: string;
+  saldo_atual: number;
+  custo_medio: number;
+  valor_total: number;
+  parceiro?: { nome_parceiro: string } | null;
+  programa?: { nome: string } | null;
+};
+
+type SaldoBanco = {
+  id: string;
+  nome_banco: string;
+  agencia: string | null;
+  numero_conta: string | null;
+  saldo_inicial: number;
+  total_creditos: number;
+  total_debitos: number;
+  saldo_atual: number;
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -108,9 +129,11 @@ const StatusBadge = ({ status, dv }: { status: string; dv: string | null }) => {
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function DashboardFinanceiro() {
-  const [tab, setTab] = useState<'visao' | 'receber' | 'pagar'>('visao');
+  const [tab, setTab] = useState<'visao' | 'receber' | 'pagar' | 'estoque' | 'banco'>('visao');
   const [dataCR, setDataCR] = useState<ContaReceber[]>([]);
   const [dataAP, setDataAP] = useState<ContaPagar[]>([]);
+  const [estoque, setEstoque] = useState<EstoqueLinha[]>([]);
+  const [saldosBanco, setSaldosBanco] = useState<SaldoBanco[]>([]);
   const [cartoesMap, setCartoesMap] = useState<Record<string, string>>({});
   const [cartoesTipoMap, setCartoesTipoMap] = useState<Record<string, string>>({});
   const [principalIdMap, setPrincipalIdMap] = useState<Record<string, string>>({});
@@ -133,16 +156,60 @@ export default function DashboardFinanceiro() {
 
   // ── Fetch ──────────────────────────────────────────────────────────────────
   const fetchAll = useCallback(async () => {
-    const [{ data: cr }, { data: ap }, { data: cartoes }, { data: conc }] = await Promise.all([
+    const [
+      { data: cr },
+      { data: ap },
+      { data: cartoes },
+      { data: conc },
+      { data: ep },
+      { data: contasBancarias },
+      { data: concAll },
+    ] = await Promise.all([
       supabase.from('contas_receber')
         .select('*, venda:vendas(ordem_compra, clientes(nome_cliente), parceiros(nome_parceiro))')
         .order('data_vencimento', { ascending: true }),
       supabase.from('contas_a_pagar').select('*').order('data_vencimento', { ascending: true }),
       supabase.from('cartoes_credito').select('id,cartao,banco_emissor,tipo_cartao,cartao_principal_id').order('cartao'),
       supabase.from('conciliacao_bancaria').select('venda_id, valor_extrato').not('venda_id', 'is', null),
+      supabase.from('estoque_pontos')
+        .select('parceiro_id, programa_id, saldo_atual, custo_medio, valor_total, parceiro:parceiros(nome_parceiro), programa:programas_fidelidade(nome)')
+        .gt('saldo_atual', 0),
+      supabase.from('contas_bancarias')
+        .select('id, nome_banco, agencia, numero_conta, saldo_inicial')
+        .order('nome_banco'),
+      supabase.from('conciliacao_bancaria')
+        .select('conta_bancaria_id, tipo, valor_extrato')
+        .eq('status', 'conciliado'),
     ]);
     setDataCR((cr as ContaReceber[]) || []);
     setDataAP((ap as ContaPagar[]) || []);
+    setEstoque((ep as unknown as EstoqueLinha[]) || []);
+
+    // Calcula saldo por conta bancária a partir das conciliações conciliadas
+    const movPorConta: Record<string, { creditos: number; debitos: number }> = {};
+    (concAll || []).forEach((c: { conta_bancaria_id: string; tipo: string; valor_extrato: number }) => {
+      if (!c.conta_bancaria_id) return;
+      if (!movPorConta[c.conta_bancaria_id]) movPorConta[c.conta_bancaria_id] = { creditos: 0, debitos: 0 };
+      const v = Number(c.valor_extrato || 0);
+      if (c.tipo === 'credito') movPorConta[c.conta_bancaria_id].creditos += v;
+      else movPorConta[c.conta_bancaria_id].debitos += v;
+    });
+
+    const saldos: SaldoBanco[] = (contasBancarias || []).map((cb: { id: string; nome_banco: string; agencia: string | null; numero_conta: string | null; saldo_inicial: number | null }) => {
+      const mov = movPorConta[cb.id] || { creditos: 0, debitos: 0 };
+      const saldoInicial = Number(cb.saldo_inicial || 0);
+      return {
+        id: cb.id,
+        nome_banco: cb.nome_banco,
+        agencia: cb.agencia,
+        numero_conta: cb.numero_conta,
+        saldo_inicial: saldoInicial,
+        total_creditos: mov.creditos,
+        total_debitos: mov.debitos,
+        saldo_atual: saldoInicial + mov.creditos - mov.debitos,
+      };
+    });
+    setSaldosBanco(saldos);
 
     // Soma valores da conciliação por venda
     const recebido: Record<string, number> = {};
@@ -173,6 +240,8 @@ export default function DashboardFinanceiro() {
     const ch = supabase.channel('dash_fin_react')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'contas_receber' }, fetchAll)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'contas_a_pagar' }, fetchAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'estoque_pontos' }, fetchAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'conciliacao_bancaria' }, fetchAll)
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [fetchAll]);
@@ -310,7 +379,15 @@ export default function DashboardFinanceiro() {
   const t   = today0();
   const crK = kpis(dataCR);
   const apK = kpis(dataAP);
-  const net = crK.pendTotal - apK.pendTotal;
+  // Totais de estoque e banco
+  const totalEstoquePts   = estoque.reduce((s, e) => s + Number(e.saldo_atual || 0), 0);
+  const totalEstoqueValor = estoque.reduce((s, e) => s + Number(e.valor_total || 0), 0);
+  const totalSaldoBanco   = saldosBanco.reduce((s, b) => s + Number(b.saldo_atual || 0), 0);
+  const totalCreditosBanco = saldosBanco.reduce((s, b) => s + Number(b.total_creditos || 0), 0);
+  const totalDebitosBanco  = saldosBanco.reduce((s, b) => s + Number(b.total_debitos || 0), 0);
+
+  // Saldo líquido: Receber + Banco + Estoque − Pagar
+  const net = crK.pendTotal + totalSaldoBanco + totalEstoqueValor - apK.pendTotal;
   const vcCR = dataCR.filter(r => r.status_pagamento !== 'pago' && r.data_vencimento && new Date(r.data_vencimento + 'T00:00:00') < t).length;
   const vcAP = dataAP.filter(r => r.status_pagamento !== 'pago' && r.status_pagamento !== 'quitado' && r.data_vencimento && new Date(r.data_vencimento + 'T00:00:00') < t).length;
 
@@ -375,7 +452,7 @@ export default function DashboardFinanceiro() {
           {[
             { label: 'A Receber',        value: fmtBRL(crK.pendTotal), sub: `${dataCR.filter(r => r.status_pagamento !== 'pago').length} parc.`,       icon: TrendingUp,   bg: 'bg-emerald-50', ic: 'text-emerald-600', vl: 'text-emerald-700' },
             { label: 'A Pagar',          value: fmtBRL(apK.pendTotal), sub: `${dataAP.filter(r => r.status_pagamento !== 'pago' && r.status_pagamento !== 'quitado').length} parc.`, icon: TrendingDown, bg: 'bg-red-50',     ic: 'text-red-500',    vl: 'text-red-600'    },
-            { label: 'Saldo Líquido',    value: fmtBRL(net),           sub: net >= 0 ? 'Positivo' : 'Negativo',                                        icon: DollarSign,   bg: net >= 0 ? 'bg-blue-50' : 'bg-amber-50', ic: net >= 0 ? 'text-blue-600' : 'text-amber-600', vl: net >= 0 ? 'text-blue-700' : 'text-amber-700' },
+            { label: 'Saldo Líquido',    value: fmtBRL(net),           sub: 'Receber + Banco + Estoque − Pagar',                                       icon: DollarSign,   bg: net >= 0 ? 'bg-blue-50' : 'bg-amber-50', ic: net >= 0 ? 'text-blue-600' : 'text-amber-600', vl: net >= 0 ? 'text-blue-700' : 'text-amber-700' },
             { label: 'Total Receber',    value: fmtBRL(crK.total),     sub: `${dataCR.length} parcelas`,                                               icon: CheckCircle,  bg: 'bg-slate-50',   ic: 'text-slate-500',  vl: 'text-slate-800'  },
             { label: 'Total Pagar',      value: fmtBRL(apK.total),     sub: `${dataAP.length} parcelas`,                                               icon: CreditCard,   bg: 'bg-slate-50',   ic: 'text-slate-500',  vl: 'text-slate-800'  },
             { label: 'Vencidos',         value: String(vcCR + vcAP),   sub: `${vcCR} receber · ${vcAP} pagar`,                                         icon: AlertTriangle, bg: (vcCR + vcAP) > 0 ? 'bg-red-50' : 'bg-slate-50', ic: (vcCR + vcAP) > 0 ? 'text-red-500' : 'text-slate-400', vl: (vcCR + vcAP) > 0 ? 'text-red-600' : 'text-slate-700' },
@@ -666,6 +743,157 @@ export default function DashboardFinanceiro() {
     );
   };
 
+  // ── Estoque ───────────────────────────────────────────────────────────────
+  const TabEstoque = () => {
+    const rows = [...estoque].sort((a, b) => Number(b.valor_total || 0) - Number(a.valor_total || 0));
+    const parceirosUnicos = new Set(rows.map(r => r.parceiro_id)).size;
+    return (
+      <div className="space-y-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+            <div className="flex items-start justify-between mb-3">
+              <span className="text-xs text-slate-500 font-medium">Total de Pontos</span>
+              <div className="bg-emerald-50 p-1.5 rounded-lg"><Package className="w-4 h-4 text-emerald-600" /></div>
+            </div>
+            <p className="text-xl font-bold text-emerald-700">{totalEstoquePts.toLocaleString('pt-BR')} <span className="text-xs font-normal text-slate-400">pts</span></p>
+            <p className="text-xs text-slate-400 mt-1">{rows.length} estoques ativos</p>
+          </div>
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+            <div className="flex items-start justify-between mb-3">
+              <span className="text-xs text-slate-500 font-medium">Valor Total do Estoque</span>
+              <div className="bg-blue-50 p-1.5 rounded-lg"><DollarSign className="w-4 h-4 text-blue-600" /></div>
+            </div>
+            <p className="text-xl font-bold text-slate-800">{fmtBRL(totalEstoqueValor)}</p>
+            <p className="text-xs text-slate-400 mt-1">a custo médio</p>
+          </div>
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+            <div className="flex items-start justify-between mb-3">
+              <span className="text-xs text-slate-500 font-medium">Parceiros com Saldo</span>
+              <div className="bg-purple-50 p-1.5 rounded-lg"><CheckCircle className="w-4 h-4 text-purple-600" /></div>
+            </div>
+            <p className="text-xl font-bold text-slate-800">{parceirosUnicos}</p>
+            <p className="text-xs text-slate-400 mt-1">parceiros distintos</p>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
+          <div className="px-4 py-3 border-b border-slate-100">
+            <h3 className="text-sm font-semibold text-slate-700">Estoque de Pontos / Milhas</h3>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
+                  {['#','Parceiro','Programa','Saldo (pts)','Custo Médio','Valor R$'].map(h => (
+                    <th key={h} className="px-4 py-3 text-left font-medium border-b border-slate-100 whitespace-nowrap">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {rows.length === 0 ? (
+                  <tr><td colSpan={6} className="text-center py-10 text-slate-400 text-sm">Nenhum estoque encontrado.</td></tr>
+                ) : rows.map((r, i) => (
+                  <tr key={`${r.parceiro_id}-${r.programa_id}`} className="hover:bg-slate-50 transition-colors">
+                    <td className="px-4 py-3 text-slate-400 text-xs">{i + 1}</td>
+                    <td className="px-4 py-3 text-slate-700 font-medium max-w-[260px] truncate" title={r.parceiro?.nome_parceiro || ''}>{r.parceiro?.nome_parceiro || '—'}</td>
+                    <td className="px-4 py-3 text-slate-600">{r.programa?.nome || '—'}</td>
+                    <td className="px-4 py-3 text-slate-800 font-semibold">{Number(r.saldo_atual).toLocaleString('pt-BR')}</td>
+                    <td className="px-4 py-3 text-slate-600">{fmtBRL(Number(r.custo_medio || 0))}</td>
+                    <td className="px-4 py-3 text-emerald-700 font-bold">{fmtBRL(Number(r.valor_total || 0))}</td>
+                  </tr>
+                ))}
+              </tbody>
+              {rows.length > 0 && (
+                <tfoot>
+                  <tr className="bg-slate-50 font-bold text-slate-700">
+                    <td colSpan={3} className="px-4 py-3 text-right">Total</td>
+                    <td className="px-4 py-3">{totalEstoquePts.toLocaleString('pt-BR')}</td>
+                    <td className="px-4 py-3">—</td>
+                    <td className="px-4 py-3 text-emerald-700">{fmtBRL(totalEstoqueValor)}</td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // ── Saldo Bancário ────────────────────────────────────────────────────────
+  const TabBanco = () => {
+    return (
+      <div className="space-y-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+            <div className="flex items-start justify-between mb-3">
+              <span className="text-xs text-slate-500 font-medium">Saldo Total em Banco</span>
+              <div className={`${totalSaldoBanco >= 0 ? 'bg-emerald-50' : 'bg-red-50'} p-1.5 rounded-lg`}><Banknote className={`w-4 h-4 ${totalSaldoBanco >= 0 ? 'text-emerald-600' : 'text-red-500'}`} /></div>
+            </div>
+            <p className={`text-xl font-bold ${totalSaldoBanco >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{fmtBRL(totalSaldoBanco)}</p>
+            <p className="text-xs text-slate-400 mt-1">{saldosBanco.length} contas</p>
+          </div>
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+            <div className="flex items-start justify-between mb-3">
+              <span className="text-xs text-slate-500 font-medium">Total Entradas (conciliado)</span>
+              <div className="bg-emerald-50 p-1.5 rounded-lg"><TrendingUp className="w-4 h-4 text-emerald-600" /></div>
+            </div>
+            <p className="text-xl font-bold text-emerald-700">{fmtBRL(totalCreditosBanco)}</p>
+          </div>
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+            <div className="flex items-start justify-between mb-3">
+              <span className="text-xs text-slate-500 font-medium">Total Saídas (conciliado)</span>
+              <div className="bg-red-50 p-1.5 rounded-lg"><TrendingDown className="w-4 h-4 text-red-500" /></div>
+            </div>
+            <p className="text-xl font-bold text-red-600">{fmtBRL(totalDebitosBanco)}</p>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
+          <div className="px-4 py-3 border-b border-slate-100">
+            <h3 className="text-sm font-semibold text-slate-700">Saldo por Conta Bancária</h3>
+            <p className="text-xs text-slate-400 mt-0.5">Saldo atual = Saldo inicial + Créditos − Débitos (lançamentos conciliados)</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
+                  {['Banco','Agência','Conta','Total Entradas','Total Saídas','Saldo Atual'].map(h => (
+                    <th key={h} className="px-4 py-3 text-left font-medium border-b border-slate-100 whitespace-nowrap">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {saldosBanco.length === 0 ? (
+                  <tr><td colSpan={6} className="text-center py-10 text-slate-400 text-sm">Nenhuma conta bancária cadastrada.</td></tr>
+                ) : saldosBanco.map(b => (
+                  <tr key={b.id} className="hover:bg-slate-50 transition-colors">
+                    <td className="px-4 py-3 text-slate-700 font-medium">{b.nome_banco}</td>
+                    <td className="px-4 py-3 text-slate-500">{b.agencia || '—'}</td>
+                    <td className="px-4 py-3 text-slate-500">{b.numero_conta || '—'}</td>
+                    <td className="px-4 py-3 text-emerald-600 font-medium">{fmtBRL(b.total_creditos)}</td>
+                    <td className="px-4 py-3 text-red-500 font-medium">{fmtBRL(b.total_debitos)}</td>
+                    <td className={`px-4 py-3 font-bold ${b.saldo_atual >= 0 ? 'text-slate-800' : 'text-red-600'}`}>{fmtBRL(b.saldo_atual)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              {saldosBanco.length > 0 && (
+                <tfoot>
+                  <tr className="bg-slate-50 font-bold text-slate-700">
+                    <td colSpan={3} className="px-4 py-3 text-right">Total</td>
+                    <td className="px-4 py-3 text-emerald-700">{fmtBRL(totalCreditosBanco)}</td>
+                    <td className="px-4 py-3 text-red-600">{fmtBRL(totalDebitosBanco)}</td>
+                    <td className={`px-4 py-3 ${totalSaldoBanco >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{fmtBRL(totalSaldoBanco)}</td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-6">
@@ -695,11 +923,13 @@ export default function DashboardFinanceiro() {
       ) : (
         <>
           {/* Tabs */}
-          <div className="border-b border-slate-200 flex gap-0">
+          <div className="border-b border-slate-200 flex gap-0 flex-wrap">
             {([
               { id: 'visao',   label: 'Visão Geral' },
               { id: 'receber', label: 'Contas a Receber' },
               { id: 'pagar',   label: 'Contas a Pagar' },
+              { id: 'estoque', label: 'Estoque' },
+              { id: 'banco',   label: 'Saldo Bancário' },
             ] as const).map(tb => (
               <button
                 key={tb.id}
@@ -718,6 +948,8 @@ export default function DashboardFinanceiro() {
           {tab === 'visao'   && <TabVisaoGeral />}
           {tab === 'receber' && <TabReceber />}
           {tab === 'pagar'   && <TabPagar />}
+          {tab === 'estoque' && <TabEstoque />}
+          {tab === 'banco'   && <TabBanco />}
         </>
       )}
     </div>
