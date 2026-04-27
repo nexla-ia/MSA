@@ -116,6 +116,14 @@ export default function VendaLocalizador() {
     ? (venda.valor_total || 0) + (venda.taxa_embarque || 0) + (venda.taxa_resgate || 0) + (venda.taxa_bagagem || 0)
     : 0;
 
+  // Recalcula o lucro a partir dos valores reais da venda em vez de confiar
+  // no campo lucro_real persistido (que pode ter sido salvo errado).
+  const lucroCalculado = venda
+    ? Number(venda.valor_total || 0)
+      - (Number(venda.custo_medio || 0) * Number(venda.quantidade_milhas || 0)) / 1000
+      - Number(venda.custo_emissao || 0)
+    : 0;
+
   if (loading) {
     return (
       <div className="p-6 flex items-center justify-center min-h-64">
@@ -170,10 +178,10 @@ export default function VendaLocalizador() {
             <div className="text-xs text-gray-500 mb-1">Valor Total Venda</div>
             <div className="text-xl font-bold text-gray-900">{formatCurrency(valorTotalVenda)}</div>
           </div>
-          <div className={`rounded-xl border p-4 shadow-sm ${venda.lucro_real >= 0 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+          <div className={`rounded-xl border p-4 shadow-sm ${lucroCalculado >= 0 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
             <div className="text-xs text-gray-500 mb-1">Lucro</div>
-            <div className={`text-xl font-bold ${venda.lucro_real >= 0 ? 'text-green-700' : 'text-red-700'}`}>
-              {formatCurrency(venda.lucro_real)}
+            <div className={`text-xl font-bold ${lucroCalculado >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+              {formatCurrency(lucroCalculado)}
             </div>
           </div>
         </div>
